@@ -5,14 +5,10 @@ use std::str::Chars;
 
 fn strtol(chars: &mut Peekable<Chars>) -> i64 {
     let mut num = 0;
-    while let Some(ch) = chars.peek() {
-        match ch {
-            '0'..='9' => {
-                let x = chars.next().unwrap().to_digit(10).unwrap() as i64;
-                num = num * 10 + x;
-            }
-            _ => break,
-        }
+    while let Some(ch) = chars.peek().filter(|c| c.is_digit(10)) {
+        let x = ch.to_digit(10).unwrap() as i64;
+        num = num * 10 + x;
+        chars.next();
     }
     num
 }
