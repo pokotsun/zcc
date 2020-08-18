@@ -5,3 +5,8 @@
 **/a.out
 tmp*
 zcc
+
+
+#Added by cargo
+
+/target

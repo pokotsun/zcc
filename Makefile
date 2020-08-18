@@ -1,14 +1,13 @@
-CFLAGS=-std=c11 -g -static -fno-common
-
 all: test clean
 
-zcc: main.o
-	$(CC) -o zcc main.o $(LDFLAGS)
+zcc:
+	cargo build
+	cp ./target/debug/zcc ./zcc 
 
 test: zcc
 	./test.sh
 
 clean:
-	rm -f zcc *.o *~ tmp*
+	rm -f zcc tmp*
 
 .PHONY: test clean
