@@ -1,6 +1,6 @@
 use std::env;
-use std::process;
 use std::iter::Peekable;
+use std::process;
 use std::str::Chars;
 
 fn strtol(chars: &mut Peekable<Chars>) -> i64 {
@@ -20,18 +20,28 @@ fn main() {
         process::exit(1);
     }
 
-    let mut p = args[1].chars().peekable();
-
-    let num = strtol(&mut p);
-
-    // while let Some(current) = it.peek() {
-
-    // }
+    let mut chars = args[1].chars().peekable();
 
     println!(".globl main");
     println!("main:");
-    // println!("  mov ${}, %rax", );
-    println!("  mov ${}, %rax", num);
+    println!("  mov ${}, %rax", strtol(&mut chars));
+    while let Some(ch) = chars.peek().cloned() {
+        match ch {
+            '+' => {
+                chars.next();
+                println!("  add ${}, %rax", strtol(&mut chars));
+            }
+            '-' => {
+                chars.next();
+                println!("  sub ${}, %rax", strtol(&mut chars));
+            }
+            _ => {
+                eprintln!("unexpected character: {}", ch);
+                process::exit(1);
+            }
+        }
+    }
+
     println!("  ret");
 }
 
@@ -54,6 +64,15 @@ mod tests {
         let actual = strtol(&mut chars);
 
         assert_eq!(12345, actual);
+        assert_eq!(None, chars.next())
+    }
+
+    #[test]
+    fn strtol_get_none() {
+        let mut chars = "".chars().peekable();
+        let actual = strtol(&mut chars);
+
+        assert_eq!(0, actual);
         assert_eq!(None, chars.next())
     }
 }
