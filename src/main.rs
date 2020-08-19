@@ -13,6 +13,30 @@ fn strtol(chars: &mut Peekable<Chars>) -> i64 {
     num
 }
 
+enum TokenKind {
+    Reserved,
+    Num(i64),
+    Eof,
+}
+
+struct Token {
+    kind: TokenKind,  // Token kind
+    next: Box<Token>, // next token
+    loc: usize,       // Token location
+    word: String,     // Token word
+}
+
+impl Token {
+    fn equal(&self, s: &str) -> bool {
+        self.word == s.to_string()
+    }
+}
+
+fn error(msg: &str) {
+    eprintln!("{}", msg);
+    process::exit(1);
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
