@@ -20,17 +20,27 @@ enum TokenKind {
 }
 
 struct Token {
-    kind: TokenKind,  // Token kind
-    word: String,     // Token word
+    kind: TokenKind, // Token kind
+    word: String,    // Token word
 }
 
 impl Token {
     fn new(kind: TokenKind, word: String) -> Self {
-        Token { kind: kind, word: word }
+        Token {
+            kind: kind,
+            word: word,
+        }
     }
 
     fn equal(&self, s: &str) -> bool {
         self.word == s.to_string()
+    }
+
+    fn get_number(&self) -> Option<i64> {
+        match self.kind {
+            TokenKind::Num(val) => Some(val),
+            _ => None,
+        }
     }
 }
 
@@ -40,12 +50,14 @@ fn tokenize(mut chars: &mut Peekable<Chars>) -> Vec<Token> {
     while let Some(ch) = chars.peek().cloned() {
         match ch {
             // skip whitespace characters.
-            ' ' => { chars.next(); },
+            ' ' => {
+                chars.next();
+            }
             '0'..='9' => {
                 let num = strtol(&mut chars);
                 let token = Token::new(TokenKind::Num(num), num.to_string());
                 tokens.push(token);
-            },
+            }
             '+' | '-' => {
                 chars.next();
                 let token = Token::new(TokenKind::Reserved, ch.to_string());
@@ -85,38 +97,28 @@ fn main() {
     let first_token = iter.next().unwrap();
 
     // the first token must be a number
-    match first_token.kind {
-        TokenKind::Num(val) => {
-            println!("  mov ${}, %rax", val);
-        }
-        _ => {
-            error("expected a number");
-        }
+    if let Some(val) = first_token.get_number() {
+        println!("  mov ${}, %rax", val);
+    } else {
+        error("expected a number");
     }
 
     while let Some(token) = iter.next() {
         if token.equal("+") {
-            println!("  add ${}, %rax", strtol(&mut chars));
+            let next = iter.next().unwrap();
+            if let Some(val) = next.get_number() {
+                println!("  add ${}, %rax", val);
+            } else {
+                error("expected a number");
+            }
         }
 
         if token.equal("-") {
             let next = iter.next().unwrap();
-            println!("  sub ${}, %rax", 0);
-        }
-    }
-
-    while let Some(ch) = chars.peek().cloned() {
-        match ch {
-            '+' => {
-                chars.next();
-            }
-            '-' => {
-                chars.next();
-                println!("  sub ${}, %rax", strtol(&mut chars));
-            }
-            _ => {
-                eprintln!("unexpected character: {}", ch);
-                process::exit(1);
+            if let Some(val) = next.get_number() {
+                println!("  sub ${}, %rax", val);
+            } else {
+                error("expected a number");
             }
         }
     }
