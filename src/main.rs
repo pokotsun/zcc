@@ -1,11 +1,11 @@
 use std::env;
-use std::iter::Peekable;
+use std::iter::{Enumerate, Peekable};
 use std::process;
 use std::str::Chars;
 
-fn strtol(chars: &mut Peekable<Chars>) -> i64 {
+fn strtol(chars: &mut Peekable<Enumerate<Chars>>) -> i64 {
     let mut num = 0;
-    while let Some(ch) = chars.peek().filter(|c| c.is_digit(10)) {
+    while let Some((_, ch)) = chars.peek().filter(|(_, c)| c.is_digit(10)) {
         let x = ch.to_digit(10).unwrap() as i64;
         num = num * 10 + x;
         chars.next();
@@ -37,17 +37,17 @@ impl Token {
     }
 
     fn get_number(&self) -> Option<i64> {
-        match self.kind {
-            TokenKind::Num(val) => Some(val),
-            _ => None,
+        if let TokenKind::Num(val) = self.kind {
+            return Some(val);
         }
+        None
     }
 }
 
-fn tokenize(mut chars: &mut Peekable<Chars>) -> Vec<Token> {
+fn tokenize(mut chars: &mut Peekable<Enumerate<Chars>>) -> Vec<Token> {
     let mut tokens = Vec::new();
 
-    while let Some(ch) = chars.peek().cloned() {
+    while let Some((_, ch)) = chars.peek().cloned() {
         match ch {
             // skip whitespace characters.
             ' ' => {
@@ -78,6 +78,11 @@ fn error(msg: &str) {
     process::exit(1);
 }
 
+fn verror_at(loc: usize, line: &str, err_msg: &str) {
+    eprintln!("{}", line);
+    eprintln!("{}", " ".repeat(loc) + &format!("^ {}", err_msg));
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
@@ -85,7 +90,7 @@ fn main() {
         process::exit(1);
     }
 
-    let mut chars = args[1].chars().peekable();
+    let mut chars = args[1].chars().enumerate().peekable();
 
     let tokens = tokenize(&mut chars);
 
@@ -96,7 +101,7 @@ fn main() {
 
     let first_token = iter.next().unwrap();
 
-    // the first token must be a number
+    // The first token must be a number
     if let Some(val) = first_token.get_number() {
         println!("  mov ${}, %rax", val);
     } else {
@@ -105,8 +110,8 @@ fn main() {
 
     while let Some(token) = iter.next() {
         if token.equal("+") {
-            let next = iter.next().unwrap();
-            if let Some(val) = next.get_number() {
+            let next_token = iter.next().unwrap();
+            if let Some(val) = next_token.get_number() {
                 println!("  add ${}, %rax", val);
             } else {
                 error("expected a number");
@@ -114,15 +119,14 @@ fn main() {
         }
 
         if token.equal("-") {
-            let next = iter.next().unwrap();
-            if let Some(val) = next.get_number() {
+            let next_token = iter.next().unwrap();
+            if let Some(val) = next_token.get_number() {
                 println!("  sub ${}, %rax", val);
             } else {
                 error("expected a number");
             }
         }
     }
-
     println!("  ret");
 }
 
@@ -132,7 +136,7 @@ mod tests {
 
     #[test]
     fn strtol_get_1() {
-        let mut chars = "1".chars().peekable();
+        let mut chars = "1".chars().enumerate().peekable();
         let actual = strtol(&mut chars);
 
         assert_eq!(1, actual);
@@ -141,7 +145,7 @@ mod tests {
 
     #[test]
     fn strtol_get_12345() {
-        let mut chars = "12345".chars().peekable();
+        let mut chars = "12345".chars().enumerate().peekable();
         let actual = strtol(&mut chars);
 
         assert_eq!(12345, actual);
@@ -150,7 +154,7 @@ mod tests {
 
     #[test]
     fn strtol_get_none() {
-        let mut chars = "".chars().peekable();
+        let mut chars = "".chars().enumerate().peekable();
         let actual = strtol(&mut chars);
 
         assert_eq!(0, actual);
