@@ -21,13 +21,17 @@ enum TokenKind {
 
 struct Token {
     kind: TokenKind, // Token kind
+    loc: usize,      // Token location
+    line: String,    // Line which exists token
     word: String,    // Token word
 }
 
 impl Token {
-    fn new(kind: TokenKind, word: String) -> Self {
+    fn new(kind: TokenKind, loc: usize, line: String, word: String) -> Self {
         Token {
             kind: kind,
+            loc: loc,
+            line: line,
             word: word,
         }
     }
@@ -44,43 +48,49 @@ impl Token {
     }
 }
 
-fn tokenize(mut chars: &mut Peekable<Enumerate<Chars>>) -> Vec<Token> {
+fn tokenize(line: String) -> Vec<Token> {
+    let mut chars_peek = line.chars().enumerate().peekable();
     let mut tokens = Vec::new();
 
-    while let Some((_, ch)) = chars.peek().cloned() {
+    while let Some((i, ch)) = chars_peek.peek().cloned() {
         match ch {
             // skip whitespace characters.
             ' ' => {
-                chars.next();
+                chars_peek.next();
             }
             '0'..='9' => {
-                let num = strtol(&mut chars);
-                let token = Token::new(TokenKind::Num(num), num.to_string());
+                let num = strtol(&mut chars_peek);
+                let token = Token::new(
+                    TokenKind::Num(num),
+                    i.clone(),
+                    line.clone(),
+                    num.to_string(),
+                );
                 tokens.push(token);
             }
             '+' | '-' => {
-                chars.next();
-                let token = Token::new(TokenKind::Reserved, ch.to_string());
+                chars_peek.next();
+                let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
                 tokens.push(token);
             }
             _ => {
-                error("invalid token");
+                error_at(i, &line.clone(), "invalid token");
             }
         }
     }
-    let eof = Token::new(TokenKind::Eof, "".to_string());
+    let eof = Token::new(TokenKind::Eof, line.len(), line.clone(), "".to_string());
     tokens.push(eof);
     tokens
 }
 
-fn error(msg: &str) {
-    eprintln!("{}", msg);
+fn error_at(loc: usize, line: &str, err_msg: &str) {
+    eprintln!("{}", line);
+    eprintln!("{}", " ".repeat(loc) + &format!("^ {}", err_msg));
     process::exit(1);
 }
 
-fn verror_at(loc: usize, line: &str, err_msg: &str) {
-    eprintln!("{}", line);
-    eprintln!("{}", " ".repeat(loc) + &format!("^ {}", err_msg));
+fn error_tok(tok: &Token, err_msg: &str) {
+    error_at(tok.loc, &tok.line, err_msg);
 }
 
 fn main() {
@@ -90,9 +100,9 @@ fn main() {
         process::exit(1);
     }
 
-    let mut chars = args[1].chars().enumerate().peekable();
+    let chars = args[1].clone();
 
-    let tokens = tokenize(&mut chars);
+    let tokens = tokenize(chars);
 
     println!(".globl main");
     println!("main:");
@@ -105,7 +115,7 @@ fn main() {
     if let Some(val) = first_token.get_number() {
         println!("  mov ${}, %rax", val);
     } else {
-        error("expected a number");
+        error_tok(first_token, "expected a number");
     }
 
     while let Some(token) = iter.next() {
@@ -114,7 +124,7 @@ fn main() {
             if let Some(val) = next_token.get_number() {
                 println!("  add ${}, %rax", val);
             } else {
-                error("expected a number");
+                error_tok(next_token, "expected a number");
             }
         }
 
@@ -123,7 +133,7 @@ fn main() {
             if let Some(val) = next_token.get_number() {
                 println!("  sub ${}, %rax", val);
             } else {
-                error("expected a number");
+                error_tok(next_token, "expected a number");
             }
         }
     }
