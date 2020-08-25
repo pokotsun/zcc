@@ -145,6 +145,17 @@ impl Node {
     // }
 }
 
+//
+// Code Generator
+//
+
+const registers: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
+fn reg(idx: usize) -> &'static str {
+    registers
+        .get(idx)
+        .expect(&format!("register out of range: {}", idx))
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
