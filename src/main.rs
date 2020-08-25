@@ -1,5 +1,5 @@
 use std::env;
-use std::iter::{Enumerate, Peekable};
+use std::iter::{Enumerate, Iterator, Peekable};
 use std::process;
 use std::str::Chars;
 
@@ -68,13 +68,14 @@ fn tokenize(line: String) -> Vec<Token> {
                 );
                 tokens.push(token);
             }
-            '+' | '-' => {
+            // Punctuator
+            '+' | '-' | '*' | '/' => {
                 chars_peek.next();
                 let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
                 tokens.push(token);
             }
             _ => {
-                error_at(i, &line.clone(), "invalid token");
+                error_at(i, &line, "invalid token");
             }
         }
     }
@@ -91,6 +92,57 @@ fn error_at(loc: usize, line: &str, err_msg: &str) {
 
 fn error_tok(tok: &Token, err_msg: &str) {
     error_at(tok.loc, &tok.line, err_msg);
+}
+
+//
+// Parser
+//
+
+enum BinOp {
+    Add, // +
+    Sub, // -
+    Mul, // *
+    Div, // /
+}
+
+enum NodeKind {
+    Num(i64), // Integer
+    Bin {
+        op: BinOp,
+        lhs: Box<Node>, // Left-hand side
+        rhs: Box<Node>, // Right-hand side
+    },
+}
+
+// AST node type
+struct Node {
+    kind: NodeKind, // Node kind
+}
+
+impl Node {
+    fn new(kind: NodeKind) -> Self {
+        Self { kind: kind }
+    }
+
+    // fn expr<'a, I>(tok_iter: &mut I) -> Node
+    // where
+    //     I: Iterator<Item = &'a Token>,
+    // {
+    //     let node = mul(&mut tok_iter);
+    //     loop {
+    //         if tok.equal()
+    //     }
+    //     let tok = tok_iter.next();
+    // }
+    // fn primary<'a> (tok_iter: &mut dyn Iterator<Item = &'a Token>) -> Node {
+    //     let tok = tok_iter.next().unwrap();
+    //     if tok.equal("(") {
+    //         let node = expr(&mut tok_iter);
+    //         return node;
+    //     }
+    //     let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
+    //     node
+    // }
 }
 
 fn main() {
