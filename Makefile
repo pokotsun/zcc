@@ -1,4 +1,4 @@
-all: test clean
+all: zcc test clean
 
 zcc:
 	cargo build
@@ -9,6 +9,6 @@ test: zcc
 	./test.sh
 
 clean:
-	rm -f zcc tmp*
+	rm -f zcc
 
 .PHONY: test clean

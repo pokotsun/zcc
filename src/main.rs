@@ -1,6 +1,7 @@
 use std::env;
 use std::iter::{Enumerate, Iterator, Peekable};
 use std::process;
+use std::slice::Iter;
 use std::str::Chars;
 
 fn strtol(chars: &mut Peekable<Enumerate<Chars>>) -> i64 {
@@ -48,7 +49,10 @@ impl Token {
     }
 }
 
-fn skip(tok_iter: &mut impl Iterator<Item = Token>, s: &str) {
+fn skip<'a, I>(tok_iter: &mut I, s: &str)
+where
+    I: Iterator<Item = &'a Token>,
+{
     let tok = tok_iter.next().unwrap();
     if !tok.equal(s) {
         error_tok(&tok, &format!("expected '{}'", s));
@@ -76,7 +80,7 @@ fn tokenize(line: String) -> Vec<Token> {
                 tokens.push(token);
             }
             // Punctuator
-            '+' | '-' | '*' | '/' => {
+            '+' | '-' | '*' | '/' | '(' | ')' => {
                 chars_peek.next();
                 let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
                 tokens.push(token);
@@ -86,7 +90,7 @@ fn tokenize(line: String) -> Vec<Token> {
             }
         }
     }
-    let eof = Token::new(TokenKind::Eof, line.len(), line.clone(), "".to_string());
+    let eof = Token::new(TokenKind::Eof, line.len(), line.clone(), "EOF".to_string());
     tokens.push(eof);
     tokens
 }
@@ -141,18 +145,20 @@ impl Node {
     }
 
     // expr = mul ("+" mul | "-" mul)*
-    fn expr(mut tok_iter: &mut impl Iterator<Item = Token>) -> Node {
-        let mut node = Node::mul(&mut tok_iter);
+    fn expr(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let mut node = Node::mul(tok_peek);
 
         loop {
-            let tok = tok_iter.next().unwrap();
+            let tok = tok_peek.peek().unwrap();
             if tok.equal("+") {
-                let rhs = Node::mul(&mut tok_iter);
+                tok_peek.next();
+                let rhs = Node::mul(tok_peek);
                 node = Node::new_bin(BinOp::Add, node, rhs);
                 continue;
             }
             if tok.equal("-") {
-                let rhs = Node::mul(&mut tok_iter);
+                tok_peek.next();
+                let rhs = Node::mul(tok_peek);
                 node = Node::new_bin(BinOp::Sub, node, rhs);
                 continue;
             }
@@ -161,18 +167,20 @@ impl Node {
     }
 
     // mul = primary ("*" primary | "/" primary)
-    fn mul(mut tok_iter: &mut impl Iterator<Item = Token>) -> Node {
-        let mut node = Node::primary(&mut tok_iter);
+    fn mul(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let mut node = Node::primary(tok_peek);
 
         loop {
-            let tok = tok_iter.next().unwrap();
+            let tok = tok_peek.peek().unwrap();
             if tok.equal("*") {
-                let rhs = Node::primary(&mut tok_iter);
+                tok_peek.next();
+                let rhs = Node::primary(tok_peek);
                 node = Node::new_bin(BinOp::Mul, node, rhs);
                 continue;
             }
             if tok.equal("/") {
-                let rhs = Node::primary(&mut tok_iter);
+                tok_peek.next();
+                let rhs = Node::primary(tok_peek);
                 node = Node::new_bin(BinOp::Div, node, rhs);
                 continue;
             }
@@ -181,11 +189,11 @@ impl Node {
     }
 
     // primary = "(" expr ")" | num
-    fn primary(mut tok_iter: &mut impl Iterator<Item = Token>) -> Node {
-        let tok = tok_iter.next().unwrap();
+    fn primary(mut tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let tok = tok_peek.next().unwrap();
         if tok.equal("(") {
-            let node = Node::expr(&mut tok_iter);
-            skip(&mut tok_iter, ")");
+            let node = Node::expr(tok_peek);
+            skip(&mut tok_peek, ")");
             return node;
         }
         let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
@@ -204,6 +212,35 @@ fn reg(idx: usize) -> &'static str {
         .expect(&format!("register out of range: {}", idx))
 }
 
+fn gen_expr(node: Node, mut top: usize) -> usize {
+    if let NodeKind::Num(val) = node.kind {
+        println!("  mov ${}, {}", val, reg(top));
+        top += 1;
+        return top;
+    }
+    if let NodeKind::Bin { op, lhs, rhs } = node.kind {
+        top = gen_expr(*lhs, top);
+        top = gen_expr(*rhs, top);
+        let rd = reg(top - 2);
+        let rs = reg(top - 1);
+        top -= 1;
+
+        match op {
+            BinOp::Add => println!("  add {}, {}", rs, rd),
+            BinOp::Sub => println!("  sub {}, {}", rs, rd),
+            BinOp::Mul => println!("  imul {}, {}", rs, rd),
+            BinOp::Div => {
+                println!("  mov {}, %rax", rd);
+                println!("  cqo");
+                println!("  idiv {}", rs);
+                println!("  mov %rax, {}", rd);
+            }
+        }
+    }
+
+    return top;
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
@@ -211,43 +248,40 @@ fn main() {
         process::exit(1);
     }
 
+    // Tokenize and parse.
     let chars = args[1].clone();
 
     let tokens = tokenize(chars);
+    let mut tok_iter = tokens.iter().peekable();
+
+    let node = Node::expr(&mut tok_iter);
+
+    let last_token = tok_iter.next().unwrap();
+    if let TokenKind::Eof = last_token.kind {
+    } else {
+        error_tok(last_token, "extra token");
+    }
 
     println!(".globl main");
     println!("main:");
 
-    let mut iter = tokens.iter();
+    // Save callee-saved registers
+    println!("  push %r12");
+    println!("  push %r13");
+    println!("  push %r14");
+    println!("  push %r15");
 
-    let first_token = iter.next().unwrap();
+    let top = gen_expr(node, 0);
 
-    // The first token must be a number
-    if let Some(val) = first_token.get_number() {
-        println!("  mov ${}, %rax", val);
-    } else {
-        error_tok(first_token, "expected a number");
-    }
+    // Set the result of the expression to RAX so that
+    // the result becomes a return value of this function.
+    println!("  mov {}, %rax", reg(top - 1));
 
-    while let Some(token) = iter.next() {
-        if token.equal("+") {
-            let next_token = iter.next().unwrap();
-            if let Some(val) = next_token.get_number() {
-                println!("  add ${}, %rax", val);
-            } else {
-                error_tok(next_token, "expected a number");
-            }
-        }
+    println!("  pop %r15");
+    println!("  pop %r14");
+    println!("  pop %r13");
+    println!("  pop %r12");
 
-        if token.equal("-") {
-            let next_token = iter.next().unwrap();
-            if let Some(val) = next_token.get_number() {
-                println!("  sub ${}, %rax", val);
-            } else {
-                error_tok(next_token, "expected a number");
-            }
-        }
-    }
     println!("  ret");
 }
 
