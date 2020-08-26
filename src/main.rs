@@ -48,6 +48,13 @@ impl Token {
     }
 }
 
+fn skip(tok_iter: &mut impl Iterator<Item = Token>, s: &str) {
+    let tok = tok_iter.next().unwrap();
+    if !tok.equal(s) {
+        error_tok(&tok, &format!("expected '{}'", s));
+    }
+}
+
 fn tokenize(line: String) -> Vec<Token> {
     let mut chars_peek = line.chars().enumerate().peekable();
     let mut tokens = Vec::new();
@@ -124,34 +131,75 @@ impl Node {
         Self { kind: kind }
     }
 
-    // fn expr<'a, I>(tok_iter: &mut I) -> Node
-    // where
-    //     I: Iterator<Item = &'a Token>,
-    // {
-    //     let node = mul(&mut tok_iter);
-    //     loop {
-    //         if tok.equal()
-    //     }
-    //     let tok = tok_iter.next();
-    // }
-    // fn primary<'a> (tok_iter: &mut dyn Iterator<Item = &'a Token>) -> Node {
-    //     let tok = tok_iter.next().unwrap();
-    //     if tok.equal("(") {
-    //         let node = expr(&mut tok_iter);
-    //         return node;
-    //     }
-    //     let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
-    //     node
-    // }
+    fn new_bin(op: BinOp, lhs: Node, rhs: Node) -> Self {
+        let kind = NodeKind::Bin {
+            op: op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
+        Node::new(kind)
+    }
+
+    // expr = mul ("+" mul | "-" mul)*
+    fn expr(mut tok_iter: &mut impl Iterator<Item = Token>) -> Node {
+        let mut node = Node::mul(&mut tok_iter);
+
+        loop {
+            let tok = tok_iter.next().unwrap();
+            if tok.equal("+") {
+                let rhs = Node::mul(&mut tok_iter);
+                node = Node::new_bin(BinOp::Add, node, rhs);
+                continue;
+            }
+            if tok.equal("-") {
+                let rhs = Node::mul(&mut tok_iter);
+                node = Node::new_bin(BinOp::Sub, node, rhs);
+                continue;
+            }
+            return node;
+        }
+    }
+
+    // mul = primary ("*" primary | "/" primary)
+    fn mul(mut tok_iter: &mut impl Iterator<Item = Token>) -> Node {
+        let mut node = Node::primary(&mut tok_iter);
+
+        loop {
+            let tok = tok_iter.next().unwrap();
+            if tok.equal("*") {
+                let rhs = Node::primary(&mut tok_iter);
+                node = Node::new_bin(BinOp::Mul, node, rhs);
+                continue;
+            }
+            if tok.equal("/") {
+                let rhs = Node::primary(&mut tok_iter);
+                node = Node::new_bin(BinOp::Div, node, rhs);
+                continue;
+            }
+            return node;
+        }
+    }
+
+    // primary = "(" expr ")" | num
+    fn primary(mut tok_iter: &mut impl Iterator<Item = Token>) -> Node {
+        let tok = tok_iter.next().unwrap();
+        if tok.equal("(") {
+            let node = Node::expr(&mut tok_iter);
+            skip(&mut tok_iter, ")");
+            return node;
+        }
+        let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
+        node
+    }
 }
 
 //
 // Code Generator
 //
 
-const registers: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
+const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
 fn reg(idx: usize) -> &'static str {
-    registers
+    REGISTERS
         .get(idx)
         .expect(&format!("register out of range: {}", idx))
 }
