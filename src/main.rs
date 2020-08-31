@@ -66,14 +66,52 @@ fn tokenize(line: String) -> Vec<Token> {
             ' ' => {
                 chars_peek.next();
             }
+            '=' => {
+                chars_peek.next();
+                let token = match chars_peek.peek() {
+                    Some((_, '=')) => {
+                        chars_peek.next();
+                        Token::new(TokenKind::Reserved, i, line.clone(), "==".to_string())
+                    }
+                    _ => Token::new(TokenKind::Reserved, i, line.clone(), "=".to_string()),
+                };
+                tokens.push(token);
+            }
+            '!' => {
+                chars_peek.next();
+                if let Some((_, '=')) = chars_peek.peek() {
+                    chars_peek.next();
+                    let token = Token::new(TokenKind::Reserved, i, line.clone(), "!=".to_string());
+                    tokens.push(token);
+                    continue;
+                }
+                error_at(i, &line, "invalid token start with !.");
+            }
+            '<' => {
+                chars_peek.next();
+                let token = match chars_peek.peek() {
+                    Some((_, '=')) => {
+                        chars_peek.next();
+                        Token::new(TokenKind::Reserved, i, line.clone(), "<=".to_string())
+                    }
+                    _ => Token::new(TokenKind::Reserved, i, line.clone(), "<".to_string()),
+                };
+                tokens.push(token);
+            }
+            '>' => {
+                chars_peek.next();
+                let token = match chars_peek.peek() {
+                    Some((_, '=')) => {
+                        chars_peek.next();
+                        Token::new(TokenKind::Reserved, i, line.clone(), ">=".to_string())
+                    }
+                    _ => Token::new(TokenKind::Reserved, i, line.clone(), ">".to_string()),
+                };
+                tokens.push(token);
+            }
             '0'..='9' => {
                 let num = strtol(&mut chars_peek);
-                let token = Token::new(
-                    TokenKind::Num(num),
-                    i.clone(),
-                    line.clone(),
-                    num.to_string(),
-                );
+                let token = Token::new(TokenKind::Num(num), i, line.clone(), num.to_string());
                 tokens.push(token);
             }
             // Punctuator
@@ -107,10 +145,14 @@ fn error_tok(tok: &Token, err_msg: &str) {
 //
 
 enum BinOp {
-    Add, // +
-    Sub, // -
-    Mul, // *
-    Div, // /
+    Add,    // +
+    Sub,    // -
+    Mul,    // *
+    Div,    // /
+    Equal,  // ==
+    NEqual, // !=
+    Lt,     // <
+    Le,     // <=
 }
 
 enum NodeKind {
@@ -141,10 +183,71 @@ impl Node {
         Node::new(kind)
     }
 
-    // expr = mul ("+" mul | "-" mul)*
+    // expr = equality
     fn expr(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
-        let mut node = Node::mul(tok_peek);
+        Node::equality(tok_peek)
+    }
 
+    // equality = relational ("==" relational | "!=" relational)
+    fn equality(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let mut node = Node::relational(tok_peek);
+
+        loop {
+            let tok = tok_peek.peek().unwrap();
+            if tok.equal("==") {
+                tok_peek.next();
+                let rhs = Node::relational(tok_peek);
+                node = Node::new_bin(BinOp::Equal, node, rhs);
+                continue;
+            }
+            if tok.equal("!=") {
+                tok_peek.next();
+                let rhs = Node::relational(tok_peek);
+                node = Node::new_bin(BinOp::NEqual, node, rhs);
+                continue;
+            }
+            return node;
+        }
+    }
+
+    // relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+    fn relational(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let mut node = Node::add(tok_peek);
+
+        loop {
+            let tok = tok_peek.peek().unwrap();
+            if tok.equal("<") {
+                tok_peek.next();
+                let rhs = Node::add(tok_peek);
+                node = Node::new_bin(BinOp::Lt, node, rhs);
+                continue;
+            }
+
+            if tok.equal("<=") {
+                tok_peek.next();
+                let rhs = Node::add(tok_peek);
+                node = Node::new_bin(BinOp::Le, node, rhs);
+                continue;
+            }
+            if tok.equal(">") {
+                tok_peek.next();
+                let rhs = Node::add(tok_peek);
+                node = Node::new_bin(BinOp::Lt, rhs, node);
+                continue;
+            }
+            if tok.equal(">=") {
+                tok_peek.next();
+                let rhs = Node::add(tok_peek);
+                node = Node::new_bin(BinOp::Le, rhs, node);
+                continue;
+            }
+            return node;
+        }
+    }
+
+    // add = mul ("+" mul | "-" mul)*
+    fn add(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let mut node = Node::mul(tok_peek);
         loop {
             let tok = tok_peek.peek().unwrap();
             if tok.equal("+") {
@@ -163,7 +266,7 @@ impl Node {
         }
     }
 
-    // mul = unary ("*" unary | "/" unary)
+    // mul = unary ("*" unary | "/" unary)*
     fn mul(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
         let mut node = Node::unary(tok_peek);
 
@@ -235,11 +338,9 @@ fn gen_expr(node: Node, mut top: usize) -> usize {
         NodeKind::Num(val) => {
             println!("  mov ${}, {}", val, reg(top));
             top += 1;
-            top
         }
         NodeKind::Bin { op, lhs, rhs } => {
-            top = gen_expr(*lhs, top);
-            top = gen_expr(*rhs, top);
+            top = gen_expr(*rhs, gen_expr(*lhs, top));
             let rd = reg(top - 2);
             let rs = reg(top - 1);
             top -= 1;
@@ -254,10 +355,30 @@ fn gen_expr(node: Node, mut top: usize) -> usize {
                     println!("  idiv {}", rs);
                     println!("  mov %rax, {}", rd);
                 }
+                BinOp::Equal => {
+                    println!("  cmp {}, {}", rs, rd);
+                    println!("  sete %al");
+                    println!("  movzb %al, {}", rd);
+                }
+                BinOp::NEqual => {
+                    println!("  cmp {}, {}", rs, rd);
+                    println!("  setne %al");
+                    println!("  movzb %al, {}", rd);
+                }
+                BinOp::Lt => {
+                    println!("  cmp {}, {}", rs, rd);
+                    println!("  setl %al");
+                    println!("  movzb %al, {}", rd);
+                }
+                BinOp::Le => {
+                    println!("  cmp {}, {}", rs, rd);
+                    println!("  setle %al");
+                    println!("  movzb %al, {}", rd);
+                }
             }
-            top
         }
     }
+    top
 }
 
 fn main() {
