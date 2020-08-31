@@ -49,10 +49,7 @@ impl Token {
     }
 }
 
-fn skip<'a, I>(tok_iter: &mut I, s: &str)
-where
-    I: Iterator<Item = &'a Token>,
-{
+fn skip<'a>(tok_iter: &mut impl Iterator<Item = &'a Token>, s: &str) {
     let tok = tok_iter.next().unwrap();
     if !tok.equal(s) {
         error_tok(&tok, &format!("expected '{}'", s));
@@ -166,21 +163,21 @@ impl Node {
         }
     }
 
-    // mul = primary ("*" primary | "/" primary)
+    // mul = unary ("*" unary | "/" unary)
     fn mul(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
-        let mut node = Node::primary(tok_peek);
+        let mut node = Node::unary(tok_peek);
 
         loop {
             let tok = tok_peek.peek().unwrap();
             if tok.equal("*") {
                 tok_peek.next();
-                let rhs = Node::primary(tok_peek);
+                let rhs = Node::unary(tok_peek);
                 node = Node::new_bin(BinOp::Mul, node, rhs);
                 continue;
             }
             if tok.equal("/") {
                 tok_peek.next();
-                let rhs = Node::primary(tok_peek);
+                let rhs = Node::unary(tok_peek);
                 node = Node::new_bin(BinOp::Div, node, rhs);
                 continue;
             }
@@ -188,12 +185,33 @@ impl Node {
         }
     }
 
+    // unary = ("+" | "-") unary
+    //       | primary
+    fn unary(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let tok = tok_peek.peek().unwrap();
+        if tok.equal("+") {
+            tok_peek.next();
+            return Node::unary(tok_peek);
+        }
+
+        if tok.equal("-") {
+            tok_peek.next();
+            return Node::new_bin(
+                BinOp::Sub,
+                Node::new(NodeKind::Num(0)),
+                Node::unary(tok_peek),
+            );
+        }
+
+        return Node::primary(tok_peek);
+    }
+
     // primary = "(" expr ")" | num
-    fn primary(mut tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+    fn primary(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
         let tok = tok_peek.next().unwrap();
         if tok.equal("(") {
             let node = Node::expr(tok_peek);
-            skip(&mut tok_peek, ")");
+            skip(tok_peek, ")");
             return node;
         }
         let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
@@ -213,32 +231,33 @@ fn reg(idx: usize) -> &'static str {
 }
 
 fn gen_expr(node: Node, mut top: usize) -> usize {
-    if let NodeKind::Num(val) = node.kind {
-        println!("  mov ${}, {}", val, reg(top));
-        top += 1;
-        return top;
-    }
-    if let NodeKind::Bin { op, lhs, rhs } = node.kind {
-        top = gen_expr(*lhs, top);
-        top = gen_expr(*rhs, top);
-        let rd = reg(top - 2);
-        let rs = reg(top - 1);
-        top -= 1;
+    match node.kind {
+        NodeKind::Num(val) => {
+            println!("  mov ${}, {}", val, reg(top));
+            top += 1;
+            top
+        }
+        NodeKind::Bin { op, lhs, rhs } => {
+            top = gen_expr(*lhs, top);
+            top = gen_expr(*rhs, top);
+            let rd = reg(top - 2);
+            let rs = reg(top - 1);
+            top -= 1;
 
-        match op {
-            BinOp::Add => println!("  add {}, {}", rs, rd),
-            BinOp::Sub => println!("  sub {}, {}", rs, rd),
-            BinOp::Mul => println!("  imul {}, {}", rs, rd),
-            BinOp::Div => {
-                println!("  mov {}, %rax", rd);
-                println!("  cqo");
-                println!("  idiv {}", rs);
-                println!("  mov %rax, {}", rd);
+            match op {
+                BinOp::Add => println!("  add {}, {}", rs, rd),
+                BinOp::Sub => println!("  sub {}, {}", rs, rd),
+                BinOp::Mul => println!("  imul {}, {}", rs, rd),
+                BinOp::Div => {
+                    println!("  mov {}, %rax", rd);
+                    println!("  cqo");
+                    println!("  idiv {}", rs);
+                    println!("  mov %rax, {}", rd);
+                }
             }
+            top
         }
     }
-
-    return top;
 }
 
 fn main() {

@@ -9,6 +9,6 @@ test: zcc
 	./test.sh
 
 clean:
-	rm -f zcc
+	rm -f zcc tmp*
 
 .PHONY: test clean
