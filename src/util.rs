@@ -12,6 +12,11 @@ macro_rules! matches(
     )
 );
 
+pub fn error(msg: &str) {
+    eprintln!("{}", msg);
+    process::exit(1);
+}
+
 pub fn error_at(loc: usize, line: &str, err_msg: &str) {
     eprintln!("{}", line);
     eprintln!("{}", " ".repeat(loc) + &format!("^ {}", err_msg));

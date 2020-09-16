@@ -1,9 +1,12 @@
-use crate::tokenize::{skip, Token, TokenKind, error_tok};
+use crate::tokenize::{error_tok, skip, Token, TokenKind};
 use std::iter::Peekable;
 use std::slice::Iter;
 //
 // Parser
 //
+pub enum UnaryOp {
+    ExprStmt,
+}
 
 pub enum BinOp {
     Add,    // +
@@ -18,6 +21,7 @@ pub enum BinOp {
 
 pub enum NodeKind {
     Num(i64), // Integer
+    Unary(UnaryOp, Box<Node>),
     Bin {
         op: BinOp,
         lhs: Box<Node>, // Left-hand side
@@ -32,16 +36,33 @@ pub struct Node {
 
 impl Node {
     pub fn new(kind: NodeKind) -> Self {
-        Self { kind: kind }
+        Self { kind }
+    }
+
+    pub fn new_unary(op: UnaryOp, node: Node) -> Self {
+        let kind = NodeKind::Unary(op, Box::new(node));
+        Node::new(kind)
     }
 
     pub fn new_bin(op: BinOp, lhs: Node, rhs: Node) -> Self {
         let kind = NodeKind::Bin {
-            op: op,
+            op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         };
         Node::new(kind)
+    }
+
+    // stmt = expr-stmt
+    fn stmt(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        Node::expr_stmt(tok_peek)
+    }
+
+    // expr-stmt = expr ";"
+    fn expr_stmt(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let node = Node::new_unary(UnaryOp::ExprStmt, Node::expr(tok_peek));
+        skip(tok_peek, ";");
+        return node;
     }
 
     // expr = equality
@@ -178,15 +199,24 @@ impl Node {
             skip(tok_peek, ")");
             return node;
         }
+        if let None = tok.get_number() {
+            error_tok(&tok, "invalid num");
+        }
         let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
         node
     }
 
-    pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
-        let nodes = Node::expr(tok_peek);
-        let token = tok_peek.next().unwrap();
-        if !matches!(token.kind, TokenKind::Eof) {
-            error_tok(token, "extra token");
+    // program = stmt*
+    pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Vec<Node> {
+        let mut nodes = Vec::new();
+        while let Some(tok) = tok_peek.peek() {
+            if !matches!(tok.kind, TokenKind::Eof) {
+                let node = Node::stmt(tok_peek);
+                nodes.push(node);
+            } else {
+                // eofをskip
+                skip(tok_peek, "EOF");
+            }
         }
         nodes
     }

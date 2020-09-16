@@ -1,4 +1,5 @@
 use crate::parser::*;
+use crate::util::error;
 //
 // Code Generator
 //
@@ -16,6 +17,7 @@ fn gen_expr(node: Node, mut top: usize) -> usize {
             println!("  mov ${}, {}", val, reg(top));
             top += 1;
         }
+        NodeKind::Unary(_, _) => {}
         NodeKind::Bin { op, lhs, rhs } => {
             top = gen_expr(*rhs, gen_expr(*lhs, top));
             let rd = reg(top - 2);
@@ -58,7 +60,29 @@ fn gen_expr(node: Node, mut top: usize) -> usize {
     top
 }
 
-pub fn codegen(node: Node) {
+// return register top index
+fn gen_stmt(node: Node) -> usize {
+    match node.kind {
+        NodeKind::Unary(op, node) => {
+            match op {
+                UnaryOp::ExprStmt => {
+                    let top = gen_expr(*node, 0) - 1;
+
+                    // Set the result of the expression to RAX so that
+                    // the result becomes a return value of this function.
+                    println!("  mov {}, %rax", reg(top));
+                    top
+                }
+            }
+        }
+        _ => {
+            error("invalid statement.");
+            100 as usize
+        }
+    }
+}
+
+pub fn codegen(nodes: Vec<Node>) {
     println!(".globl main");
     println!("main:");
 
@@ -68,11 +92,12 @@ pub fn codegen(node: Node) {
     println!("  push %r14");
     println!("  push %r15");
 
-    let top = gen_expr(node, 0);
-
-    // Set the result of the expression to RAX so that
-    // the result becomes a return value of this function.
-    println!("  mov {}, %rax", reg(top - 1));
+    for node in nodes {
+        let top = gen_stmt(node);
+        if top != 0 {
+            error("register top is invalid.");
+        }
+    }
 
     println!("  pop %r15");
     println!("  pop %r14");
