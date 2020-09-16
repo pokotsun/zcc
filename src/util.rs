@@ -1,6 +1,7 @@
-use std::iter::{Enumerate, Iterator, Peekable};
+use std::iter::{Enumerate, Iterator};
 use std::process;
 use std::str::Chars;
+use itertools::structs::MultiPeek;
 
 #[macro_export]
 macro_rules! matches(
@@ -23,7 +24,7 @@ pub fn error_at(loc: usize, line: &str, err_msg: &str) {
     process::exit(1);
 }
 
-pub fn strtol(chars: &mut Peekable<Enumerate<Chars>>) -> i64 {
+pub fn strtol(chars: &mut MultiPeek<Enumerate<Chars>>) -> i64 {
     let mut num = 0;
     while let Some((_, ch)) = chars.peek().filter(|(_, c)| c.is_digit(10)) {
         let x = ch.to_digit(10).unwrap() as i64;
@@ -36,10 +37,11 @@ pub fn strtol(chars: &mut Peekable<Enumerate<Chars>>) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::multipeek;
 
     #[test]
     fn strtol_get_1() {
-        let mut chars = "1".chars().enumerate().peekable();
+        let mut chars = multipeek("1".chars().enumerate());
         let actual = strtol(&mut chars);
 
         assert_eq!(1, actual);
@@ -48,7 +50,7 @@ mod tests {
 
     #[test]
     fn strtol_get_12345() {
-        let mut chars = "12345".chars().enumerate().peekable();
+        let mut chars = multipeek("12345".chars().enumerate());
         let actual = strtol(&mut chars);
 
         assert_eq!(12345, actual);
@@ -57,7 +59,7 @@ mod tests {
 
     #[test]
     fn strtol_get_none() {
-        let mut chars = "".chars().enumerate().peekable();
+        let mut chars = multipeek("".chars().enumerate());
         let actual = strtol(&mut chars);
 
         assert_eq!(0, actual);

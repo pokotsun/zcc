@@ -1,5 +1,6 @@
 use crate::util::*;
 use std::iter::Iterator;
+use itertools::multipeek;
 
 pub enum TokenKind {
     Reserved,
@@ -44,7 +45,7 @@ pub fn skip<'a>(tok_iter: &mut impl Iterator<Item = &'a Token>, s: &str) {
 }
 
 pub fn tokenize(line: String) -> Vec<Token> {
-    let mut chars_peek = line.chars().enumerate().peekable();
+    let mut chars_peek = multipeek(line.chars().enumerate());
     let mut tokens = Vec::new();
 
     while let Some((i, ch)) = chars_peek.peek().cloned() {
