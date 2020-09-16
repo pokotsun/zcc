@@ -22,13 +22,7 @@ fn main() {
     let tokens = tokenize(chars);
     let mut tok_iter = tokens.iter().peekable();
 
-    let node = Node::expr(&mut tok_iter);
-
-    let last_token = tok_iter.next().unwrap();
-    if let TokenKind::Eof = last_token.kind {
-    } else {
-        error_tok(last_token, "extra token");
-    }
+    let node = Node::parse(&mut tok_iter);
 
     codegen(node);
 }

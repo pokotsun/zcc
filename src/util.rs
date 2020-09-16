@@ -2,6 +2,16 @@ use std::iter::{Enumerate, Iterator, Peekable};
 use std::process;
 use std::str::Chars;
 
+#[macro_export]
+macro_rules! matches(
+    ($e:expr, $p:pat) => (
+        match $e {
+            $p => true,
+            _ => false,
+        }
+    )
+);
+
 pub fn error_at(loc: usize, line: &str, err_msg: &str) {
     eprintln!("{}", line);
     eprintln!("{}", " ".repeat(loc) + &format!("^ {}", err_msg));

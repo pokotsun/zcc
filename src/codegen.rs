@@ -10,7 +10,7 @@ pub fn reg(idx: usize) -> &'static str {
         .expect(&format!("register out of range: {}", idx))
 }
 
-pub fn gen_expr(node: Node, mut top: usize) -> usize {
+fn gen_expr(node: Node, mut top: usize) -> usize {
     match node.kind {
         NodeKind::Num(val) => {
             println!("  mov ${}, {}", val, reg(top));

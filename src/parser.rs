@@ -1,4 +1,4 @@
-use crate::tokenize::{skip, Token};
+use crate::tokenize::{skip, Token, TokenKind, error_tok};
 use std::iter::Peekable;
 use std::slice::Iter;
 //
@@ -45,7 +45,7 @@ impl Node {
     }
 
     // expr = equality
-    pub fn expr(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+    fn expr(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
         Node::equality(tok_peek)
     }
 
@@ -180,5 +180,14 @@ impl Node {
         }
         let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
         node
+    }
+
+    pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let nodes = Node::expr(tok_peek);
+        let token = tok_peek.next().unwrap();
+        if !matches!(token.kind, TokenKind::Eof) {
+            error_tok(token, "extra token");
+        }
+        nodes
     }
 }
