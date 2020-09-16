@@ -17,10 +17,10 @@ pub struct Token {
 impl Token {
     pub fn new(kind: TokenKind, loc: usize, line: String, word: String) -> Self {
         Token {
-            kind: kind,
-            loc: loc,
-            line: line,
-            word: word,
+            kind,
+            loc,
+            line,
+            word,
         }
     }
 

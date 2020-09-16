@@ -30,25 +30,5 @@ fn main() {
         error_tok(last_token, "extra token");
     }
 
-    println!(".globl main");
-    println!("main:");
-
-    // Save callee-saved registers
-    println!("  push %r12");
-    println!("  push %r13");
-    println!("  push %r14");
-    println!("  push %r15");
-
-    let top = gen_expr(node, 0);
-
-    // Set the result of the expression to RAX so that
-    // the result becomes a return value of this function.
-    println!("  mov {}, %rax", reg(top - 1));
-
-    println!("  pop %r15");
-    println!("  pop %r14");
-    println!("  pop %r13");
-    println!("  pop %r12");
-
-    println!("  ret");
+    codegen(node);
 }
