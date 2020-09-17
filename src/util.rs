@@ -35,6 +35,18 @@ pub fn strtol(chars: &mut MultiPeek<Enumerate<Chars>>) -> i64 {
     num
 }
 
+pub fn startswith(chars: &mut MultiPeek<Enumerate<Chars>>, actual: &str) -> bool {
+    let mut ok = true;
+    for a in actual.chars() {
+        if chars.peek().and_then(|x| Some(x.1)) != Some(a) {
+            ok = false;
+            break;
+        }
+    }
+    chars.reset_peek();
+    ok
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -65,5 +77,19 @@ mod tests {
 
         assert_eq!(0, actual);
         assert_eq!(None, chars.next())
+    }
+
+    #[test]
+    fn startswith_return_ok() {
+        let mut peeks = multipeek("return abc;".chars().enumerate());
+        assert!(startswith(&mut peeks, "return"));
+        assert_eq!(peeks.next(), Some((0, 'r')));
+    }
+
+    #[test]
+    fn startswith_return_ng() {
+        let mut peeks = multipeek("123; return abc;".chars().enumerate());
+        assert!(!startswith(&mut peeks, "return"));
+        assert_eq!(peeks.next(), Some((0, '1')));
     }
 }
