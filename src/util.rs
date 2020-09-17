@@ -1,7 +1,7 @@
+use itertools::structs::MultiPeek;
 use std::iter::{Enumerate, Iterator};
 use std::process;
 use std::str::Chars;
-use itertools::structs::MultiPeek;
 
 #[macro_export]
 macro_rules! matches(
@@ -31,6 +31,7 @@ pub fn strtol(chars: &mut MultiPeek<Enumerate<Chars>>) -> i64 {
         num = num * 10 + x;
         chars.next();
     }
+    chars.reset_peek();
     num
 }
 
