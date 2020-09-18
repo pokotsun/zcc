@@ -65,14 +65,16 @@ fn gen_stmt(node: Node) -> usize {
     match node.kind {
         NodeKind::Unary(op, node) => {
             match op {
-                UnaryOp::ExprStmt => {
+                UnaryOp::Return => {
                     let top = gen_expr(*node, 0) - 1;
-
                     // Set the result of the expression to RAX so that
                     // the result becomes a return value of this function.
                     println!("  mov {}, %rax", reg(top));
+                    println!("  jmp .L.return");
+
                     top
                 }
+                UnaryOp::ExprStmt => gen_expr(*node, 0) - 1,
             }
         }
         _ => {
@@ -99,6 +101,7 @@ pub fn codegen(nodes: Vec<Node>) {
         }
     }
 
+    println!(".L.return:");
     println!("  pop %r15");
     println!("  pop %r14");
     println!("  pop %r13");

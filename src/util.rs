@@ -47,6 +47,24 @@ pub fn startswith(chars: &mut MultiPeek<Enumerate<Chars>>, actual: &str) -> bool
     ok
 }
 
+pub fn nth_peek<'a>(
+    chars: &'a mut MultiPeek<Enumerate<Chars>>,
+    n: usize,
+) -> Option<&'a (usize, char)> {
+    for _ in 0..n - 1 {
+        chars.peek();
+    }
+    chars.peek()
+}
+
+pub fn is_alpha(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_'
+}
+
+pub fn is_alnum(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

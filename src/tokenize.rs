@@ -121,6 +121,20 @@ pub fn tokenize(line: String) -> Vec<Token> {
                 tokens.push(token);
             }
             _ => {
+                // Keywords
+                chars_peek.reset_peek();
+                let keyword = "return";
+                if startswith(&mut chars_peek, keyword)
+                    && !nth_peek(&mut chars_peek, 6)
+                        .filter(|(_, x)| !is_alnum(*x))
+                        .is_some()
+                {
+                    let token =
+                        Token::new(TokenKind::Reserved, i, line.clone(), keyword.to_string());
+                    tokens.push(token);
+                    chars_peek.nth(6);
+                    continue;
+                }
                 error_at(i, &line, "invalid token");
             }
         }

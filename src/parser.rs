@@ -6,6 +6,7 @@ use std::slice::Iter;
 //
 pub enum UnaryOp {
     ExprStmt,
+    Return,
 }
 
 pub enum BinOp {
@@ -53,8 +54,16 @@ impl Node {
         Node::new(kind)
     }
 
-    // stmt = expr-stmt
+    // stmt = "return" expr ";"
+    //      | expr-stmt
     fn stmt(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let tok = tok_peek.peek().unwrap();
+        if tok.equal("return") {
+            tok_peek.next();
+            let node = Node::new_unary(UnaryOp::Return, Node::expr(tok_peek));
+            skip(tok_peek, ";");
+            return node;
+        }
         Node::expr_stmt(tok_peek)
     }
 
