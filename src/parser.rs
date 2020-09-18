@@ -1,4 +1,4 @@
-use crate::tokenize::{error_tok, skip, Token, TokenKind};
+use crate::tokenize::{skip, Token, TokenKind};
 use std::iter::Peekable;
 use std::slice::Iter;
 //
@@ -18,6 +18,7 @@ pub enum BinOp {
     NEqual, // !=
     Lt,     // <
     Le,     // <=
+    Assign, // = variable assign
 }
 
 pub enum NodeKind {
@@ -27,6 +28,9 @@ pub enum NodeKind {
         op: BinOp,
         lhs: Box<Node>, // Left-hand side
         rhs: Box<Node>, // Right-hand side
+    },
+    Var {
+        name: String,
     },
 }
 
@@ -54,6 +58,11 @@ impl Node {
         Node::new(kind)
     }
 
+    pub fn new_var_node(name: String) -> Self {
+        let kind = NodeKind::Var { name };
+        Node::new(kind)
+    }
+
     // stmt = "return" expr ";"
     //      | expr-stmt
     fn stmt(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
@@ -74,9 +83,20 @@ impl Node {
         return node;
     }
 
-    // expr = equality
+    // expr = assign
     fn expr(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
-        Node::equality(tok_peek)
+        Node::assign(tok_peek)
+    }
+
+    // assign = equality ("=" assign)?
+    fn assign(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
+        let mut node = Node::equality(tok_peek);
+        let tok = tok_peek.peek().unwrap();
+        if tok.equal("=") {
+            tok_peek.next();
+            node = Node::new_bin(BinOp::Assign, node, Node::assign(tok_peek));
+        }
+        node
     }
 
     // equality = relational ("==" relational | "!=" relational)
@@ -200,7 +220,7 @@ impl Node {
         return Node::primary(tok_peek);
     }
 
-    // primary = "(" expr ")" | num
+    // primary = "(" expr ")" | ident | num
     fn primary(tok_peek: &mut Peekable<Iter<Token>>) -> Node {
         let tok = tok_peek.next().unwrap();
         if tok.equal("(") {
@@ -208,11 +228,11 @@ impl Node {
             skip(tok_peek, ")");
             return node;
         }
-        if let None = tok.get_number() {
-            error_tok(&tok, "invalid num");
+        // let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
+        match &tok.kind {
+            TokenKind::Ident(name) => Node::new_var_node(name.to_string()),
+            _ => Node::new(NodeKind::Num(tok.get_number().unwrap())),
         }
-        let node = Node::new(NodeKind::Num(tok.get_number().unwrap()));
-        node
     }
 
     // program = stmt*

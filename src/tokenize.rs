@@ -5,6 +5,7 @@ use std::iter::Iterator;
 #[derive(Debug)]
 pub enum TokenKind {
     Reserved,
+    Ident(String), // Identifiers
     Num(i64),
     Eof,
 }
@@ -108,20 +109,8 @@ pub fn tokenize(line: String) -> Vec<Token> {
                 };
                 tokens.push(token);
             }
-            '0'..='9' => {
-                chars_peek.reset_peek();
-                let num = strtol(&mut chars_peek);
-                let token = Token::new(TokenKind::Num(num), i, line.clone(), num.to_string());
-                tokens.push(token);
-            }
-            // Punctuator
-            '+' | '-' | '*' | '/' | '(' | ')' | ';' => {
-                chars_peek.next();
-                let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
-                tokens.push(token);
-            }
-            _ => {
-                // Keywords
+            'r' => {
+                // Keyword Return
                 chars_peek.reset_peek();
                 let keyword = "return";
                 if startswith(&mut chars_peek, keyword)
@@ -135,8 +124,30 @@ pub fn tokenize(line: String) -> Vec<Token> {
                     chars_peek.nth(6);
                     continue;
                 }
-                error_at(i, &line, "invalid token");
             }
+            'a'..='z' => {
+                chars_peek.next();
+                let token = Token::new(
+                    TokenKind::Ident(ch.to_string()),
+                    i,
+                    line.clone(),
+                    ch.to_string(),
+                );
+                tokens.push(token);
+            }
+            '0'..='9' => {
+                chars_peek.reset_peek();
+                let num = strtol(&mut chars_peek);
+                let token = Token::new(TokenKind::Num(num), i, line.clone(), num.to_string());
+                tokens.push(token);
+            }
+            // Punctuator
+            '+' | '-' | '*' | '/' | '(' | ')' | ';' => {
+                chars_peek.next();
+                let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
+                tokens.push(token);
+            }
+            _ => error_at(i, &line, "invalid token"),
         }
     }
     let eof = Token::new(TokenKind::Eof, line.len(), line.clone(), "EOF".to_string());
