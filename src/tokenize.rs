@@ -15,7 +15,7 @@ pub struct Token {
     pub kind: TokenKind, // Token kind
     loc: usize,          // Token location
     line: String,        // Line which exists token
-    word: String,        // Token word
+    pub word: String,        // Token word
 }
 
 impl Token {
@@ -129,7 +129,7 @@ pub fn tokenize(line: String) -> Vec<Token> {
             // TODO is_alnumに置き換える?
             'a'..='z' | '_' => {
                 let mut ident = chars_peek.next().and_then(|(_, c)| Some(c)).unwrap().to_string();
-                while let Some((_, c)) = chars_peek.peek().filter(|(_, c)| is_alpha(*c)) {
+                while let Some((_, c)) = chars_peek.peek().filter(|(_, c)| is_alnum(*c)) {
                     ident += &c.to_string();
                     chars_peek.next();
                 }
@@ -198,6 +198,16 @@ mod test {
         let tokenized = tokenize(code);
         assert_eq!(tokenized.len(), 5);
         assert_eq!(tokenized[0].word, "abc");
+        assert_eq!(tokenized[1].word, "=");
+        assert_eq!(tokenized[2].word, "3");
+    }
+
+    #[test]
+    fn tokenize_multiple_letter_with_num_variable() {
+        let code = "abc123 = 3;".to_string();
+        let tokenized = tokenize(code);
+        assert_eq!(tokenized.len(), 5);
+        assert_eq!(tokenized[0].word, "abc123");
         assert_eq!(tokenized[1].word, "=");
         assert_eq!(tokenized[2].word, "3");
     }

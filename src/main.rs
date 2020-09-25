@@ -22,7 +22,7 @@ fn main() {
     let tokens = tokenize(chars);
     let mut tok_iter = tokens.iter().peekable();
 
-    let node = Node::parse(&mut tok_iter);
+    let prog = Function::parse(&mut tok_iter);
 
-    codegen(node);
+    codegen(&prog);
 }
