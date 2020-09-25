@@ -59,6 +59,7 @@ pub fn tokenize(line: String) -> Vec<Token> {
             }
             '=' => {
                 chars_peek.next();
+
                 let token = match chars_peek.peek() {
                     Some((_, '=')) => {
                         chars_peek.next();
@@ -125,13 +126,19 @@ pub fn tokenize(line: String) -> Vec<Token> {
                     continue;
                 }
             }
-            'a'..='z' => {
-                chars_peek.next();
+            // TODO is_alnumに置き換える?
+            'a'..='z' | '_' => {
+                let mut ident = chars_peek.next().and_then(|(_, c)| Some(c)).unwrap().to_string();
+                while let Some((_, c)) = chars_peek.peek().filter(|(_, c)| is_alpha(*c)) {
+                    ident += &c.to_string();
+                    chars_peek.next();
+                }
+                chars_peek.reset_peek();
                 let token = Token::new(
-                    TokenKind::Ident(ch.to_string()),
+                    TokenKind::Ident(ident.clone()),
                     i,
                     line.clone(),
-                    ch.to_string(),
+                    ident.clone(),
                 );
                 tokens.push(token);
             }
@@ -183,5 +190,15 @@ mod test {
         assert_eq!(tokenized[3].word, "-");
         assert_eq!(tokenized[4].word, "32");
         assert_eq!(tokenized[5].word, ";");
+    }
+
+    #[test]
+    fn tokenize_multiple_letter_variable() {
+        let code = "abc = 3;".to_string();
+        let tokenized = tokenize(code);
+        assert_eq!(tokenized.len(), 5);
+        assert_eq!(tokenized[0].word, "abc");
+        assert_eq!(tokenized[1].word, "=");
+        assert_eq!(tokenized[2].word, "3");
     }
 }
