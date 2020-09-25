@@ -65,6 +65,12 @@ pub fn is_alnum(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
+// Round up `n` to the nearest multiple of `align`. For instance,
+// align_to(5, 8) returns 8 and align_to(11, 8) returns 16.
+pub fn align_to(n: usize, align: usize) -> usize {
+    (n + align - 1) / align * align
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -13,10 +13,8 @@ pub fn reg(idx: usize) -> &'static str {
 
 fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
     match &node.kind {
-        NodeKind::Var { name } => {
-            let mut offset = ((name.chars().next().unwrap_or('a')) as usize - 'a' as usize + 1) * 8;
-            offset += 32; // for callee-saved registers
-            println!("  lea -{}(%rbp), {}", offset, reg(top));
+        NodeKind::Var { var } => {
+            println!("  lea -{}(%rbp), {}", var.offset, reg(top));
             Ok(top + 1)
         }
         _ => {
@@ -86,7 +84,7 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
                 _ => error("Invalid BinOp, probably Assign"),
             }
         }
-        NodeKind::Var { name: _ } => {
+        NodeKind::Var { var: _ } => {
             top = gen_addr(&node, top).unwrap();
             load(top);
         }
@@ -95,8 +93,8 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 }
 
 // return register top index
-fn gen_stmt(node: Node) -> usize {
-    match node.kind {
+fn gen_stmt(node: &Node) -> usize {
+    match &node.kind {
         NodeKind::Unary(op, node) => {
             match op {
                 UnaryOp::Return => {
@@ -118,21 +116,21 @@ fn gen_stmt(node: Node) -> usize {
     }
 }
 
-pub fn codegen(nodes: Vec<Node>) {
+pub fn codegen(prog: &Function) {
     println!(".globl main");
     println!("main:");
 
     // Prologue %r12-15 are callee-saved registers.
     println!("  push %rbp");
     println!("  mov %rsp, %rbp"); // 現在のrspをrbpにセット
-    println!("  sub $240, %rsp"); // 関数の
+    println!("  sub ${}, %rsp", prog.stack_size); // 関数の
     println!("  mov %r12, -8(%rbp)");
     println!("  mov %r13, -16(%rbp)");
     println!("  mov %r14, -24(%rbp)");
     println!("  mov %r15, -32(%rbp)");
 
-    for node in nodes {
-        let top = gen_stmt(node);
+    for node in &prog.nodes {
+        let top = gen_stmt(&node);
         if top != 0 {
             error("register top is invalid.");
         }
