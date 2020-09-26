@@ -15,7 +15,7 @@ pub struct Token {
     pub kind: TokenKind, // Token kind
     loc: usize,          // Token location
     line: String,        // Line which exists token
-    pub word: String,        // Token word
+    pub word: String,    // Token word
 }
 
 impl Token {
@@ -128,7 +128,11 @@ pub fn tokenize(line: String) -> Vec<Token> {
             }
             // TODO is_alnumに置き換える?
             'a'..='z' | '_' => {
-                let mut ident = chars_peek.next().and_then(|(_, c)| Some(c)).unwrap().to_string();
+                let mut ident = chars_peek
+                    .next()
+                    .and_then(|(_, c)| Some(c))
+                    .unwrap()
+                    .to_string();
                 while let Some((_, c)) = chars_peek.peek().filter(|(_, c)| is_alnum(*c)) {
                     ident += &c.to_string();
                     chars_peek.next();

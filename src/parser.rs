@@ -38,7 +38,6 @@ pub enum NodeKind {
     },
 }
 
-
 // Local Variable
 #[derive(Clone, Debug)]
 pub struct Var {
@@ -261,7 +260,6 @@ impl Node {
             _ => Node::new(NodeKind::Num(tok.get_number().unwrap())),
         }
     }
-
 }
 
 pub struct Function {
@@ -272,13 +270,16 @@ pub struct Function {
 }
 
 impl Function {
-    fn new(nodes: Vec<Node>, locals: Vec<Var>) -> Self { 
+    fn new(nodes: Vec<Node>, locals: Vec<Var>) -> Self {
         let offset = 32 + 8 * (locals.len() + 1);
         let stack_size = align_to(offset, 16);
 
-        Self { nodes, locals, stack_size } 
+        Self {
+            nodes,
+            locals,
+            stack_size,
+        }
     }
-
 
     // program = stmt*
     pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Self {
