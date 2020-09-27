@@ -96,8 +96,8 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 }
 
 // return register top index
-fn gen_stmt(node: &Node) -> usize {
-    match &node.kind {
+fn gen_stmt(node: &Node) -> Result<usize, String> {
+    let stack_top = match &node.kind {
         NodeKind::Unary(op, node) => {
             match op {
                 UnaryOp::Return => {
@@ -107,23 +107,20 @@ fn gen_stmt(node: &Node) -> usize {
                     println!("  mov {}, %rax", reg(top));
                     println!("  jmp .L.return");
 
-                    top
+                    Ok(top)
                 }
-                UnaryOp::ExprStmt => gen_expr(&*node, 0) - 1,
+                UnaryOp::ExprStmt => Ok(gen_expr(&*node, 0) - 1),
             }
         }
-        NodeKind::Block(body) => {
-            for node in body.iter() {
-                let top = gen_stmt(&node);
-                assert_eq!(top, 0);
-            }
-            0
-        }
-        _ => {
-            // TODO ここのErrorをきちんと返すようにする
-            error(&format!("invalid statement: {:?}", node));
-            100 as usize
-        }
+        NodeKind::Block(body) => body.iter().fold(Ok(0), |acc, node| {
+            acc.and_then(|x| gen_stmt(&node).and_then(|y| Ok(x + y)))
+        }),
+        _ => Err(format!("invalid statement: {:?}", node)),
+    };
+    match stack_top {
+        Ok(0) => Ok(0),
+        Ok(_) => Err(format!("statement register top is invalid: {:?}", node)),
+        Err(msg) => Err(msg),
     }
 }
 
@@ -140,7 +137,9 @@ pub fn codegen(prog: &Function) {
     println!("  mov %r14, -24(%rbp)");
     println!("  mov %r15, -32(%rbp)");
 
-    gen_stmt(&prog.body);
+    if let Err(msg) = gen_stmt(&prog.body) {
+        error(&msg);
+    }
 
     // Epilogue
     println!(".L.return:");
