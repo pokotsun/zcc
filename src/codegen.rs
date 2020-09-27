@@ -84,9 +84,12 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
                 _ => error("Invalid BinOp, probably Assign"),
             }
         }
-        NodeKind::Var { var: _ } => {
+        NodeKind::Var { .. } => {
             top = gen_addr(&node, top).unwrap();
             load(top);
+        }
+        _ => {
+            error(&format!("invalid expression: {:?}", node));
         }
     }
     top
@@ -109,8 +112,16 @@ fn gen_stmt(node: &Node) -> usize {
                 UnaryOp::ExprStmt => gen_expr(&*node, 0) - 1,
             }
         }
+        NodeKind::Block(body) => {
+            for node in body.iter() {
+                let top = gen_stmt(&node);
+                assert_eq!(top, 0);
+            }
+            0
+        }
         _ => {
-            error("invalid statement.");
+            // TODO ここのErrorをきちんと返すようにする
+            error(&format!("invalid statement: {:?}", node));
             100 as usize
         }
     }
@@ -129,12 +140,7 @@ pub fn codegen(prog: &Function) {
     println!("  mov %r14, -24(%rbp)");
     println!("  mov %r15, -32(%rbp)");
 
-    for node in &prog.nodes {
-        let top = gen_stmt(&node);
-        if top != 0 {
-            error("register top is invalid.");
-        }
-    }
+    gen_stmt(&prog.body);
 
     // Epilogue
     println!(".L.return:");
