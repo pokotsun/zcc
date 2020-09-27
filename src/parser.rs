@@ -33,9 +33,8 @@ pub enum NodeKind {
         lhs: Box<Node>, // Left-hand side
         rhs: Box<Node>, // Right-hand side
     },
-    Var {
-        var: Var,
-    },
+    Var(Var),
+    Block(Vec<Node>), // { ... }
 }
 
 // Local Variable
@@ -76,11 +75,17 @@ impl Node {
     }
 
     pub fn new_var_node(var: Var) -> Self {
-        let kind = NodeKind::Var { var };
+        let kind = NodeKind::Var(var);
+        Node::new(kind)
+    }
+
+    pub fn new_block_node(nodes: Vec<Node>) -> Self {
+        let kind = NodeKind::Block(nodes);
         Node::new(kind)
     }
 
     // stmt = "return" expr ";"
+    //      | "{" compound-stmt
     //      | expr-stmt
     fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
         let tok = tok_peek.peek().unwrap();
@@ -90,7 +95,25 @@ impl Node {
             skip(tok_peek, ";");
             return node;
         }
+
+        if tok.equal("{") {
+            tok_peek.next();
+            return Node::compound_stmt(tok_peek, locals);
+        }
         Node::expr_stmt(tok_peek, locals)
+    }
+
+    // compound-stmt = stmt* "}"
+    fn compound_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+        let mut nodes = vec![];
+
+        while tok_peek.peek().filter(|tok| !tok.equal("}")).is_some() {
+            let node = Node::stmt(tok_peek, locals);
+            nodes.push(node);
+        }
+
+        skip(tok_peek, "}");
+        Node::new_block_node(nodes)
     }
 
     // expr-stmt = expr ";"
@@ -263,19 +286,19 @@ impl Node {
 }
 
 pub struct Function {
-    pub nodes: Vec<Node>,
+    pub body: Node,
     #[allow(dead_code)]
     locals: Vec<Var>, // local variables
     pub stack_size: usize,
 }
 
 impl Function {
-    fn new(nodes: Vec<Node>, locals: Vec<Var>) -> Self {
+    fn new(body: Node, locals: Vec<Var>) -> Self {
         let offset = 32 + 8 * (locals.len() + 1);
         let stack_size = align_to(offset, 16);
 
         Self {
-            nodes,
+            body,
             locals,
             stack_size,
         }
@@ -283,19 +306,11 @@ impl Function {
 
     // program = stmt*
     pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Self {
-        let mut nodes = Vec::new();
         // All local variable instances created during parsing are
         // accumulated to this list.
         let mut locals = Vec::new();
-        while let Some(tok) = tok_peek.peek() {
-            if !matches!(tok.kind, TokenKind::Eof) {
-                let node = Node::stmt(tok_peek, &mut locals);
-                nodes.push(node);
-            } else {
-                // eofをskip
-                skip(tok_peek, "EOF");
-            }
-        }
-        Function::new(nodes, locals)
+        skip(tok_peek, "{");
+        let node = Node::compound_stmt(tok_peek, &mut locals);
+        Function::new(node, locals)
     }
 }

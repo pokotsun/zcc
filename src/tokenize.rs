@@ -153,7 +153,7 @@ pub fn tokenize(line: String) -> Vec<Token> {
                 tokens.push(token);
             }
             // Punctuator
-            '+' | '-' | '*' | '/' | '(' | ')' | ';' => {
+            '+' | '-' | '*' | '/' | '(' | ')' | ';' | '{' | '}' => {
                 chars_peek.next();
                 let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
                 tokens.push(token);
