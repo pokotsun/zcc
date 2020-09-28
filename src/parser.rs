@@ -124,8 +124,14 @@ impl Node {
         Node::new_block_node(nodes)
     }
 
-    // expr-stmt = expr ";"
+    // expr-stmt = expr? ";"
     fn expr_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
+        // FIXME Nullのため, OptionかNoneという処理を入れたほうが良い?
+        if let Some(true) = tok_peek.peek().and_then(|tok| Some(tok.equal(";"))) {
+            tok_peek.next();
+            return Node::new_block_node(vec![]);
+        }
+
         let node = Node::new_unary(UnaryOp::ExprStmt, Node::expr(tok_peek, locals));
         skip(tok_peek, ";");
         return node;
