@@ -2,6 +2,7 @@ use crate::util::*;
 use itertools::multipeek;
 use std::iter::Iterator;
 
+// FIXME IdentのStringとwordは役割が被っていないか?
 #[derive(Debug)]
 pub enum TokenKind {
     Reserved,
@@ -38,6 +39,11 @@ impl Token {
         }
         None
     }
+}
+
+fn is_keyword(target: &str) -> bool {
+    let keywords = ["return", "if", "else"];
+    keywords.iter().any(|keyword| target == *keyword)
 }
 
 pub fn skip<'a>(tok_iter: &mut impl Iterator<Item = &'a Token>, s: &str) {
@@ -127,7 +133,7 @@ pub fn tokenize(line: String) -> Vec<Token> {
                 }
             }
             // TODO is_alnumに置き換える?
-            'a'..='z' | '_' => {
+            'a'..='z' | 'A'..='Z' | '_' => {
                 let mut ident = chars_peek
                     .next()
                     .and_then(|(_, c)| Some(c))
@@ -138,12 +144,13 @@ pub fn tokenize(line: String) -> Vec<Token> {
                     chars_peek.next();
                 }
                 chars_peek.reset_peek();
-                let token = Token::new(
-                    TokenKind::Ident(ident.clone()),
-                    i,
-                    line.clone(),
-                    ident.clone(),
-                );
+
+                let kind = if is_keyword(&ident) {
+                    TokenKind::Reserved
+                } else {
+                    TokenKind::Ident(ident.clone())
+                };
+                let token = Token::new(kind, i, line.clone(), ident.clone());
                 tokens.push(token);
             }
             '0'..='9' => {
@@ -214,5 +221,16 @@ mod test {
         assert_eq!(tokenized[0].word, "abc123");
         assert_eq!(tokenized[1].word, "=");
         assert_eq!(tokenized[2].word, "3");
+    }
+
+    #[test]
+    fn tokenize_if_else() {
+        let code = "{ if (1) return 2; else return 3; }".to_string();
+        let tokenized = tokenize(code);
+        assert_eq!(tokenized.len(), 14);
+        assert_eq!(tokenized[1].word, "if");
+        assert_eq!(tokenized[9].word, "return");
+        assert_eq!(tokenized[10].word, "3");
+        assert_eq!(tokenized[13].word, "EOF");
     }
 }
