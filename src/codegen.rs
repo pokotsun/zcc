@@ -4,6 +4,26 @@ use crate::util::error;
 // Code Generator
 //
 
+struct LabelCounter {
+    idx: usize,
+}
+
+impl LabelCounter {
+    fn new() -> Self {
+        LabelCounter { idx: 0 }
+    }
+}
+
+impl Iterator for LabelCounter {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        let x = self.idx;
+        self.idx += 1;
+        Some(x)
+    }
+}
+
 const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
 pub fn reg(idx: usize) -> &'static str {
     REGISTERS
@@ -96,7 +116,7 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 }
 
 // return register top index
-fn gen_stmt(node: &Node) -> Result<usize, String> {
+fn gen_stmt(node: &Node, label_counter: &mut LabelCounter) -> Result<usize, String> {
     let stack_top = match &node.kind {
         NodeKind::Unary(op, node) => {
             match op {
@@ -112,8 +132,39 @@ fn gen_stmt(node: &Node) -> Result<usize, String> {
                 UnaryOp::ExprStmt => Ok(gen_expr(&*node, 0) - 1),
             }
         }
+        NodeKind::If { cond, then, els } => {
+            let c = label_counter.next().unwrap();
+            let mut top = gen_expr(cond, 0);
+            println!("  cmp $0, {}", reg(top - 1));
+            top -= 1;
+            println!("  je .L.else.{}", c);
+            match gen_stmt(then, label_counter) {
+                Ok(0) => {}
+                _ => {
+                    return Err(format!(
+                        "statement if then register top is invalid: {:?}",
+                        then
+                    ))
+                }
+            }
+            println!("  jmp .L.end.{}", c);
+            println!(".L.else.{}:", c);
+            if let Some(node) = els.as_ref() {
+                match gen_stmt(&node, label_counter) {
+                    Ok(0) => {}
+                    _ => {
+                        return Err(format!(
+                            "statement if els register top is invalid: {:?}",
+                            node
+                        ))
+                    }
+                }
+            }
+            println!(".L.end.{}:", c);
+            Ok(top)
+        }
         NodeKind::Block(body) => body.iter().fold(Ok(0), |acc, node| {
-            acc.and_then(|x| gen_stmt(&node).and_then(|y| Ok(x + y)))
+            acc.and_then(|x| gen_stmt(&node, label_counter).and_then(|y| Ok(x + y)))
         }),
         _ => Err(format!("invalid statement: {:?}", node)),
     };
@@ -125,6 +176,7 @@ fn gen_stmt(node: &Node) -> Result<usize, String> {
 }
 
 pub fn codegen(prog: &Function) {
+    let mut label_counter = LabelCounter::new();
     println!(".globl main");
     println!("main:");
 
@@ -137,7 +189,7 @@ pub fn codegen(prog: &Function) {
     println!("  mov %r14, -24(%rbp)");
     println!("  mov %r15, -32(%rbp)");
 
-    if let Err(msg) = gen_stmt(&prog.body) {
+    if let Err(msg) = gen_stmt(&prog.body, &mut label_counter) {
         error(&msg);
     }
 

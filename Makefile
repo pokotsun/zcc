@@ -5,7 +5,7 @@ zcc:
 	cp ./target/debug/zcc ./zcc 
 
 test: zcc
-	cargo test
+	cargo test -- --nocapture
 	./test.sh
 
 clean:

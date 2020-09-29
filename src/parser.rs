@@ -1,5 +1,5 @@
 use crate::tokenize::{skip, Token, TokenKind};
-use crate::util::align_to;
+use crate::util::{align_to, error};
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::iter::Peekable;
@@ -38,6 +38,12 @@ pub enum NodeKind {
     },
     Var {
         var: Rc<Var>,
+    },
+    // if statement
+    If {
+        cond: Box<Node>,
+        then: Box<Node>,
+        els: Box<Option<Node>>,
     },
     Block(Vec<Node>), // { ... }
 }
@@ -82,6 +88,15 @@ impl Node {
         Node::new(kind)
     }
 
+    pub fn new_if(cond: Node, then: Node, els: Option<Node>) -> Self {
+        let kind = NodeKind::If {
+            cond: Box::new(cond),
+            then: Box::new(then),
+            els: Box::new(els),
+        };
+        Node::new(kind)
+    }
+
     pub fn new_var_node(var: Rc<Var>) -> Self {
         let kind = NodeKind::Var { var };
         Node::new(kind)
@@ -93,6 +108,7 @@ impl Node {
     }
 
     // stmt = "return" expr ";"
+    //      | "if" "(" expr ")" stmt ("else" stmt)?
     //      | "{" compound-stmt
     //      | expr-stmt
     fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
@@ -102,6 +118,22 @@ impl Node {
             let node = Node::new_unary(UnaryOp::Return, Node::expr(tok_peek, locals));
             skip(tok_peek, ";");
             return node;
+        }
+
+        if tok.equal("if") {
+            tok_peek.next();
+            skip(tok_peek, "(");
+            let cond = Node::expr(tok_peek, locals);
+            skip(tok_peek, ")");
+            let then = Node::stmt(tok_peek, locals);
+            // TODO mapに置き直せるのでは
+            let els = if let Some(true) = tok_peek.peek().and_then(|tok| Some(tok.equal("else"))) {
+                tok_peek.next();
+                Some(Node::stmt(tok_peek, locals))
+            } else {
+                None
+            };
+            return Node::new_if(cond, then, els);
         }
 
         if tok.equal("{") {
@@ -298,7 +330,15 @@ impl Node {
 
                 Node::new_var_node(var)
             }
-            _ => Node::new(NodeKind::Num(tok.get_number().unwrap())),
+            _ => {
+                let x = if let Some(x) = tok.get_number() {
+                    x
+                } else {
+                    error(&format!("token number parse error: {:?}", tok));
+                    0
+                };
+                Node::new(NodeKind::Num(x))
+            }
         }
     }
 }
