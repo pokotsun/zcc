@@ -120,12 +120,11 @@ impl Node {
             skip(tok_peek, ")");
             let then = Node::stmt(tok_peek, locals);
             // TODO mapに置き直せるのでは
-            let els = if let Some(true) = tok_peek.peek().and_then(|tok| Some(tok.equal("else"))) {
+            let next_tok = tok_peek.peek().map(|x| (*x).clone()); // 実体のコピー
+            let els = next_tok.filter(|tok| tok.equal("else")).map(|_| {
                 tok_peek.next();
-                Some(Node::stmt(tok_peek, locals))
-            } else {
-                None
-            };
+                Node::stmt(tok_peek, locals)
+            });
             return Node::new_if(cond, then, els);
         }
 
