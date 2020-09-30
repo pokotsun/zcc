@@ -45,6 +45,13 @@ pub enum NodeKind {
         then: Box<Node>,
         els: Box<Option<Node>>,
     },
+    // for statement
+    For {
+        cond: Box<Option<Node>>,
+        then: Box<Node>,
+        init: Box<Node>,
+        inc: Box<Option<Node>>,
+    },
     Block(Vec<Node>), // { ... }
 }
 
@@ -97,6 +104,16 @@ impl Node {
         Node::new(kind)
     }
 
+    pub fn new_for(cond: Option<Node>, then: Node, init: Node, inc: Option<Node>) -> Self {
+        let kind = NodeKind::For {
+            cond: Box::new(cond),
+            then: Box::new(then),
+            init: Box::new(init),
+            inc: Box::new(inc),
+        };
+        Node::new(kind)
+    }
+
     pub fn new_var_node(var: Rc<Var>) -> Self {
         let kind = NodeKind::Var { var };
         Node::new(kind)
@@ -109,6 +126,7 @@ impl Node {
 
     // stmt = "return" expr ";"
     //      | "if" "(" expr ")" stmt ("else" stmt)?
+    //      | "for" "(" expr-stmt expr? ";" expr? ")" stmt
     //      | "{" compound-stmt
     //      | expr-stmt
     fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
@@ -126,13 +144,38 @@ impl Node {
             let cond = Node::expr(tok_peek, locals);
             skip(tok_peek, ")");
             let then = Node::stmt(tok_peek, locals);
-            // TODO mapに置き直せるのでは
-            let next_tok = tok_peek.peek().map(|x| (*x).clone()); // 実体のコピー
-            let els = next_tok.filter(|tok| tok.equal("else")).map(|_| {
-                tok_peek.next();
-                Node::stmt(tok_peek, locals)
-            });
+
+            let els = tok_peek
+                .peek()
+                .and_then(|next_tok| Some(next_tok.clone()))
+                .filter(|next_tok| next_tok.equal("else"))
+                .map(|_| {
+                    tok_peek.next();
+                    Node::stmt(tok_peek, locals)
+                });
             return Node::new_if(cond, then, els);
+        }
+
+        if tok.equal("for") {
+            tok_peek.next();
+            skip(tok_peek, "(");
+
+            let init = Node::expr_stmt(tok_peek, locals);
+
+            let next_tok = tok_peek.peek().map(|x| (*x).clone());
+            let cond = next_tok
+                .filter(|tok| !tok.equal(";"))
+                .map(|_| Node::expr(tok_peek, locals));
+            skip(tok_peek, ";");
+
+            let next_tok = tok_peek.peek().map(|x| (*x).clone());
+            let inc = next_tok
+                .filter(|tok| !tok.equal(")"))
+                .map(|_| Node::expr(tok_peek, locals));
+            skip(tok_peek, ")");
+
+            let then = Node::stmt(tok_peek, locals);
+            return Node::new_for(cond, then, init, inc);
         }
 
         if tok.equal("{") {

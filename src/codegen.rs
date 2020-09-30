@@ -163,6 +163,38 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter) -> Result<usize, Stri
             println!(".L.end.{}:", c);
             Ok(top)
         }
+        NodeKind::For {
+            cond,
+            then,
+            init,
+            inc,
+        } => {
+            let c = label_counter.next().unwrap();
+            let mut top = gen_stmt(init, label_counter)?;
+            println!(".L.begin.{}:", c);
+            if let Some(node) = cond.as_ref() {
+                top = gen_expr(node, top);
+                println!("  cmp $0, {}", reg(top - 1));
+                top -= 1;
+                println!("  je .L.end.{}", c);
+            }
+            match gen_stmt(then, label_counter) {
+                Ok(0) => {}
+                _ => {
+                    return Err(format!(
+                        "statement for then register top is invalid: {:?}",
+                        node
+                    ))
+                }
+            }
+            if let Some(node) = inc.as_ref() {
+                top = gen_expr(node, top);
+                top -= 1;
+            }
+            println!("  jmp .L.begin.{}", c);
+            println!(".L.end.{}:", c);
+            Ok(top)
+        }
         NodeKind::Block(body) => body.iter().fold(Ok(0), |acc, node| {
             acc.and_then(|x| gen_stmt(&node, label_counter).and_then(|y| Ok(x + y)))
         }),
