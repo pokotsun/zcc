@@ -116,12 +116,12 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 }
 
 // return register top index
-fn gen_stmt(node: &Node, label_counter: &mut LabelCounter) -> Result<usize, String> {
+fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result<usize, String> {
     let stack_top = match &node.kind {
         NodeKind::Unary(op, node) => {
             match op {
                 UnaryOp::Return => {
-                    let top = gen_expr(&*node, 0) - 1;
+                    let top = gen_expr(&*node, top) - 1;
                     // Set the result of the expression to RAX so that
                     // the result becomes a return value of this function.
                     println!("  mov {}, %rax", reg(top));
@@ -129,36 +129,21 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter) -> Result<usize, Stri
 
                     Ok(top)
                 }
-                UnaryOp::ExprStmt => Ok(gen_expr(&*node, 0) - 1),
+                UnaryOp::ExprStmt => Ok(gen_expr(&*node, top) - 1),
             }
         }
         NodeKind::If { cond, then, els } => {
             let c = label_counter.next().unwrap();
-            let mut top = gen_expr(cond, 0);
+            let mut top = gen_expr(cond, top);
             println!("  cmp $0, {}", reg(top - 1));
             top -= 1;
             println!("  je .L.else.{}", c);
-            match gen_stmt(then, label_counter) {
-                Ok(0) => {}
-                _ => {
-                    return Err(format!(
-                        "statement if then register top is invalid: {:?}",
-                        then
-                    ))
-                }
-            }
+            top = gen_stmt(then, label_counter, top)?;
             println!("  jmp .L.end.{}", c);
             println!(".L.else.{}:", c);
+
             if let Some(node) = els.as_ref() {
-                match gen_stmt(&node, label_counter) {
-                    Ok(0) => {}
-                    _ => {
-                        return Err(format!(
-                            "statement if els register top is invalid: {:?}",
-                            node
-                        ))
-                    }
-                }
+                top = gen_stmt(node, label_counter, top)?;
             }
             println!(".L.end.{}:", c);
             Ok(top)
@@ -170,7 +155,7 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter) -> Result<usize, Stri
             inc,
         } => {
             let c = label_counter.next().unwrap();
-            let mut top = gen_stmt(init, label_counter)?;
+            let mut top = gen_stmt(init, label_counter, top)?;
             println!(".L.begin.{}:", c);
             if let Some(node) = cond.as_ref() {
                 top = gen_expr(node, top);
@@ -178,15 +163,7 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter) -> Result<usize, Stri
                 top -= 1;
                 println!("  je .L.end.{}", c);
             }
-            match gen_stmt(then, label_counter) {
-                Ok(0) => {}
-                _ => {
-                    return Err(format!(
-                        "statement for then register top is invalid: {:?}",
-                        node
-                    ))
-                }
-            }
+            top = gen_stmt(then, label_counter, top)?;
             if let Some(node) = inc.as_ref() {
                 top = gen_expr(node, top);
                 top -= 1;
@@ -196,7 +173,7 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter) -> Result<usize, Stri
             Ok(top)
         }
         NodeKind::Block(body) => body.iter().fold(Ok(0), |acc, node| {
-            acc.and_then(|x| gen_stmt(&node, label_counter).and_then(|y| Ok(x + y)))
+            acc.and_then(|x| gen_stmt(&node, label_counter, top).and_then(|y| Ok(x + y)))
         }),
         _ => Err(format!("invalid statement: {:?}", node)),
     };
@@ -221,7 +198,7 @@ pub fn codegen(prog: &Function) {
     println!("  mov %r14, -24(%rbp)");
     println!("  mov %r15, -32(%rbp)");
 
-    if let Err(msg) = gen_stmt(&prog.body, &mut label_counter) {
+    if let Err(msg) = gen_stmt(&prog.body, &mut label_counter, 0) {
         error(&msg);
     }
 
