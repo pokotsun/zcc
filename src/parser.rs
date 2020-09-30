@@ -52,6 +52,11 @@ pub enum NodeKind {
         init: Box<Node>,
         inc: Box<Option<Node>>,
     },
+    // while statement
+    While {
+        cond: Box<Node>,
+        then: Box<Node>,
+    },
     Block(Vec<Node>), // { ... }
 }
 
@@ -114,6 +119,14 @@ impl Node {
         Node::new(kind)
     }
 
+    pub fn new_while(cond: Node, then: Node) -> Self {
+        let kind = NodeKind::While {
+            cond: Box::new(cond),
+            then: Box::new(then),
+        };
+        Node::new(kind)
+    }
+
     pub fn new_var_node(var: Rc<Var>) -> Self {
         let kind = NodeKind::Var { var };
         Node::new(kind)
@@ -127,6 +140,7 @@ impl Node {
     // stmt = "return" expr ";"
     //      | "if" "(" expr ")" stmt ("else" stmt)?
     //      | "for" "(" expr-stmt expr? ";" expr? ")" stmt
+    //      | "while" "(" expr ")" stmt
     //      | "{" compound-stmt
     //      | expr-stmt
     fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
@@ -176,6 +190,15 @@ impl Node {
 
             let then = Node::stmt(tok_peek, locals);
             return Node::new_for(cond, then, init, inc);
+        }
+
+        if tok.equal("while") {
+            tok_peek.next();
+            skip(tok_peek, "(");
+            let cond = Node::expr(tok_peek, locals);
+            skip(tok_peek, ")");
+            let then = Node::stmt(tok_peek, locals);
+            return Node::new_while(cond, then);
         }
 
         if tok.equal("{") {

@@ -172,6 +172,18 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result
             println!(".L.end.{}:", c);
             Ok(top)
         }
+        NodeKind::While { cond, then } => {
+            let c = label_counter.next().unwrap();
+            println!(".L.begin.{}:", c);
+            let mut top = gen_expr(cond, top);
+            println!("  cmp $0, {}", reg(top - 1));
+            top -= 1;
+            println!("  je .L.end.{}", c);
+            top = gen_stmt(then, label_counter, top)?;
+            println!("  jmp .L.begin.{}", c);
+            println!(".L.end.{}:", c);
+            Ok(top)
+        }
         NodeKind::Block(body) => body.iter().fold(Ok(0), |acc, node| {
             acc.and_then(|x| gen_stmt(&node, label_counter, top).and_then(|y| Ok(x + y)))
         }),
