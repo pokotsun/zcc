@@ -1,3 +1,19 @@
+// This file contains a recursive descent parser for C.
+//
+// Most functions in this file are named after the symbols they are
+// supposed to read from an input token list. For example, stmt() is
+// responsible for reading a statement from a token list. The function
+// then construct an AST representing a statement.
+//
+// Each function conceptually returns two values, an AST node and
+// remaining part of the input tokens. Since C doesn't support
+// multiple return values, the remaining tokens are returned to the
+// caller via a pointer argument.
+//
+// Input tokens are represented by a linked list. Unlike many recursive
+// descent parsers, we don't have the notion of the "input token stream".
+// Most parsing functions don't change the global state of the parser.
+// So it is very easy to lookahead arbitrary number of tokens in this parser.
 use crate::tokenize::{skip, Token, TokenKind};
 use crate::util::{align_to, error};
 use std::iter::Peekable;
@@ -9,6 +25,8 @@ use std::slice::Iter;
 pub enum UnaryOp {
     ExprStmt,
     Return,
+    Addr,
+    Deref,
 }
 
 #[derive(Debug)]
@@ -22,6 +40,8 @@ pub enum BinOp {
     Lt,     // <
     Le,     // <=
     Assign, // = variable assign
+    PtrAdd, // pointer Add
+    PtrSub, // pointer Sub
 }
 
 #[derive(Debug)]
@@ -304,13 +324,25 @@ impl Node {
             if tok.equal("+") {
                 tok_peek.next();
                 let rhs = Node::mul(tok_peek, locals);
-                node = Node::new_bin(BinOp::Add, node, rhs);
+                node = if matches!(rhs.kind, NodeKind::Unary(UnaryOp::Addr, _))
+                    || matches!(node.kind, NodeKind::Unary(UnaryOp::Addr, _))
+                {
+                    Node::new_bin(BinOp::PtrAdd, node, rhs)
+                } else {
+                    Node::new_bin(BinOp::Add, node, rhs)
+                };
                 continue;
             }
             if tok.equal("-") {
                 tok_peek.next();
                 let rhs = Node::mul(tok_peek, locals);
-                node = Node::new_bin(BinOp::Sub, node, rhs);
+                node = if matches!(rhs.kind, NodeKind::Unary(UnaryOp::Addr, _))
+                    || matches!(node.kind, NodeKind::Unary(UnaryOp::Addr, _))
+                {
+                    Node::new_bin(BinOp::PtrSub, node, rhs)
+                } else {
+                    Node::new_bin(BinOp::Sub, node, rhs)
+                };
                 continue;
             }
             return node;
@@ -339,7 +371,7 @@ impl Node {
         }
     }
 
-    // unary = ("+" | "-") unary
+    // unary = ("+" | "-" | "*" | "&") unary
     //       | primary
     fn unary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
         let tok = tok_peek.peek().unwrap();
@@ -347,7 +379,6 @@ impl Node {
             tok_peek.next();
             return Node::unary(tok_peek, locals);
         }
-
         if tok.equal("-") {
             tok_peek.next();
             return Node::new_bin(
@@ -355,6 +386,15 @@ impl Node {
                 Node::new(NodeKind::Num(0)),
                 Node::unary(tok_peek, locals),
             );
+        }
+        if tok.equal("&") {
+            tok_peek.next();
+            return Node::new_unary(UnaryOp::Addr, Node::unary(tok_peek, locals));
+        }
+
+        if tok.equal("*") {
+            tok_peek.next();
+            return Node::new_unary(UnaryOp::Deref, Node::unary(tok_peek, locals));
         }
 
         return Node::primary(tok_peek, locals);
@@ -381,6 +421,7 @@ impl Node {
                 Node::new_var_node(var)
             }
             _ => {
+                // TODO ここの処理をもう少し綺麗にする
                 let x = if let Some(x) = tok.get_number() {
                     x
                 } else {
@@ -402,7 +443,7 @@ pub struct Function {
 
 impl Function {
     fn new(body: Node, locals: Vec<Var>) -> Self {
-        let offset = 32 + 8 * (locals.len() + 1);
+        let offset = 32 + 8 * (locals.len());
         let stack_size = align_to(offset, 16);
 
         Self {
