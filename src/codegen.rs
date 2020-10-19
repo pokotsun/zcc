@@ -37,10 +37,11 @@ fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
             println!("  lea -{}(%rbp), {}", var.offset.get(), reg(top));
             Ok(top + 1)
         }
-        _ => {
-            error("");
-            Err("NodeKind is Invalid".to_string())
+        NodeKind::Unary(UnaryOp::Deref, child) => {
+            let top = gen_expr(child, top);
+            Ok(top)
         }
+        _ => Err(format!("NodeKind is Invalid: {:?}, expected Var", node)),
     }
 }
 
@@ -59,8 +60,11 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
             println!("  mov ${}, {}", val, reg(top));
             top += 1;
         }
-        NodeKind::Unary(_, _) => {}
-        NodeKind::Bin { op, lhs, rhs } if matches!(op, BinOp::Assign) => {
+        NodeKind::Bin {
+            op: BinOp::Assign,
+            lhs,
+            rhs,
+        } => {
             top = gen_expr(&*rhs, top);
             top = gen_addr(&*lhs, top).unwrap();
             top = store(top);
@@ -73,7 +77,9 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 
             match op {
                 BinOp::Add => println!("  add {}, {}", rs, rd),
+                BinOp::PtrAdd => println!("  add {}, {}", rs, rd),
                 BinOp::Sub => println!("  sub {}, {}", rs, rd),
+                BinOp::PtrSub => println!("  sub {}, {}", rs, rd),
                 BinOp::Mul => println!("  imul {}, {}", rs, rd),
                 BinOp::Div => {
                     println!("  mov {}, %rax", rd);
@@ -108,6 +114,13 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
             top = gen_addr(&node, top).unwrap();
             load(top);
         }
+        NodeKind::Unary(UnaryOp::Deref, child) => {
+            top = gen_expr(child, top);
+            load(top);
+        }
+        NodeKind::Unary(UnaryOp::Addr, child) => {
+            top = gen_addr(child, top).unwrap();
+        }
         _ => {
             error(&format!("invalid expression: {:?}", node));
         }
@@ -118,20 +131,16 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 // return register top index
 fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result<usize, String> {
     let stack_top = match &node.kind {
-        NodeKind::Unary(op, node) => {
-            match op {
-                UnaryOp::Return => {
-                    let top = gen_expr(&*node, top) - 1;
-                    // Set the result of the expression to RAX so that
-                    // the result becomes a return value of this function.
-                    println!("  mov {}, %rax", reg(top));
-                    println!("  jmp .L.return");
+        NodeKind::Unary(UnaryOp::Return, child) => {
+            let top = gen_expr(child, top) - 1;
+            // Set the result of the expression to RAX so that
+            // the result becomes a return value of this function.
+            println!("  mov {}, %rax", reg(top));
+            println!("  jmp .L.return");
 
-                    Ok(top)
-                }
-                UnaryOp::ExprStmt => Ok(gen_expr(&*node, top) - 1),
-            }
+            Ok(top)
         }
+        NodeKind::Unary(UnaryOp::ExprStmt, child) => Ok(gen_expr(child, top) - 1),
         NodeKind::If { cond, then, els } => {
             let c = label_counter.next().unwrap();
             let mut top = gen_expr(cond, top);
@@ -184,7 +193,7 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result
             println!(".L.end.{}:", c);
             Ok(top)
         }
-        NodeKind::Block(body) => body.iter().fold(Ok(0), |acc, node| {
+        NodeKind::Block(body) => body.iter().fold(Ok(top), |acc, node| {
             acc.and_then(|x| gen_stmt(&node, label_counter, top).and_then(|y| Ok(x + y)))
         }),
         _ => Err(format!("invalid statement: {:?}", node)),
