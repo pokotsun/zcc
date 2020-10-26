@@ -15,6 +15,7 @@
 // Most parsing functions don't change the global state of the parser.
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 use crate::tokenize::{skip, Token, TokenKind};
+use crate::types::Type;
 use crate::util::{align_to, error};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -43,8 +44,6 @@ pub enum BinOp {
     Lt,     // <
     Le,     // <=
     Assign, // = variable assign
-    PtrAdd, // pointer Add
-    PtrSub, // pointer Sub
 }
 
 #[derive(Debug)]
@@ -95,6 +94,7 @@ impl Var {
         }
     }
 }
+
 // AST node type
 #[derive(Debug)]
 pub struct Node {
@@ -104,6 +104,22 @@ pub struct Node {
 impl Node {
     pub fn new(kind: NodeKind) -> Self {
         Self { kind }
+    }
+
+    pub fn get_type(&self) -> Type {
+        match &self.kind {
+            NodeKind::Unary(op, child) => match op {
+                UnaryOp::Addr => Type::pointer_to(child.get_type()),
+                UnaryOp::Deref => child.get_type(),
+                _ => unimplemented!(),
+            },
+            NodeKind::Bin { op: binop, lhs, .. } => match binop {
+                BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Assign => lhs.get_type(),
+                BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => Type::new_int(),
+            },
+            NodeKind::Var { .. } | NodeKind::Num(_) => Type::new_int(),
+            _ => unimplemented!(),
+        }
     }
 
     pub fn new_unary(op: UnaryOp, node: Node) -> Self {
@@ -118,6 +134,44 @@ impl Node {
             rhs: Box::new(rhs),
         };
         Node::new(kind)
+    }
+
+    pub fn new_add(lhs: Node, rhs: Node) -> Self {
+        match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
+            // pointer + num
+            (true, false) => Node::new_bin(
+                BinOp::Add,
+                lhs,
+                Self::new_bin(BinOp::Mul, Node::new(NodeKind::Num(8)), rhs),
+            ),
+            // num + pointer
+            (false, true) => Node::new_add(rhs, lhs),
+            // num + num
+            (false, false) => Node::new_bin(BinOp::Add, lhs, rhs),
+            // pointer + pointer
+            (true, true) => unimplemented!(),
+        }
+    }
+
+    pub fn new_sub(lhs: Node, rhs: Node) -> Self {
+        match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
+            // pointer - num
+            (true, false) => Node::new_bin(
+                BinOp::Sub,
+                lhs,
+                Self::new_bin(BinOp::Mul, Node::new(NodeKind::Num(8)), rhs),
+            ),
+            // pointer - pointer, which returns how many elements are between the two.
+            (true, true) => Node::new_bin(
+                BinOp::Div,
+                Node::new_bin(BinOp::Sub, lhs, rhs),
+                Node::new(NodeKind::Num(8)),
+            ),
+            // num - num
+            (false, false) => Node::new_bin(BinOp::Sub, lhs, rhs),
+            // num - pointer
+            (false, true) => unimplemented!(),
+        }
     }
 
     pub fn new_if(cond: Node, then: Node, els: Option<Node>) -> Self {
@@ -335,25 +389,13 @@ impl Node {
             if tok.equal("+") {
                 tok_peek.next();
                 let rhs = Node::mul(tok_peek, locals);
-                node = if matches!(rhs.kind, NodeKind::Unary(UnaryOp::Addr, _))
-                    || matches!(node.kind, NodeKind::Unary(UnaryOp::Addr, _))
-                {
-                    Node::new_bin(BinOp::PtrAdd, node, rhs)
-                } else {
-                    Node::new_bin(BinOp::Add, node, rhs)
-                };
+                node = Node::new_add(node, rhs);
                 continue;
             }
             if tok.equal("-") {
                 tok_peek.next();
                 let rhs = Node::mul(tok_peek, locals);
-                node = if matches!(rhs.kind, NodeKind::Unary(UnaryOp::Addr, _))
-                    || matches!(node.kind, NodeKind::Unary(UnaryOp::Addr, _))
-                {
-                    Node::new_bin(BinOp::PtrSub, node, rhs)
-                } else {
-                    Node::new_bin(BinOp::Sub, node, rhs)
-                };
+                node = Node::new_sub(node, rhs);
                 continue;
             }
             return node;

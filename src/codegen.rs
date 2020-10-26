@@ -77,9 +77,7 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 
             match op {
                 BinOp::Add => println!("  add {}, {}", rs, rd),
-                BinOp::PtrAdd => println!("  add {}, {}", rs, rd),
                 BinOp::Sub => println!("  sub {}, {}", rs, rd),
-                BinOp::PtrSub => println!("  sub {}, {}", rs, rd),
                 BinOp::Mul => println!("  imul {}, {}", rs, rd),
                 BinOp::Div => {
                     println!("  mov {}, %rax", rd);
