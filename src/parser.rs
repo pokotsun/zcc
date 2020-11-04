@@ -103,106 +103,106 @@ impl Node {
             NodeKind::Unary(op, child) => match op {
                 UnaryOp::Addr => Type::pointer_to(child.get_type()),
                 UnaryOp::Deref => child.get_type(),
-                _ => unimplemented!(),
+                _ => unreachable!(),
             },
             NodeKind::Bin { op: binop, lhs, .. } => match binop {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Assign => lhs.get_type(),
                 BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => Type::new_int(),
             },
             NodeKind::Var(_) | NodeKind::Num(_) => Type::new_int(),
-            _ => unimplemented!(),
+            _ => unreachable!(),
         }
     }
 
-    pub fn new_unary(op: UnaryOp, node: Node) -> Self {
+    pub fn new_unary(op: UnaryOp, node: Self) -> Self {
         let kind = NodeKind::Unary(op, Box::new(node));
-        Node::new(kind)
+        Self::new(kind)
     }
 
-    pub fn new_bin(op: BinOp, lhs: Node, rhs: Node) -> Self {
+    pub fn new_bin(op: BinOp, lhs: Self, rhs: Self) -> Self {
         let kind = NodeKind::Bin {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         };
-        Node::new(kind)
+        Self::new(kind)
     }
 
-    pub fn new_add(lhs: Node, rhs: Node) -> Self {
+    pub fn new_add(lhs: Self, rhs: Self) -> Self {
         match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
             // pointer + num
-            (true, false) => Node::new_bin(
+            (true, false) => Self::new_bin(
                 BinOp::Sub,
                 lhs,
-                Self::new_bin(BinOp::Mul, Node::new(NodeKind::Num(8)), rhs),
+                Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(8)), rhs),
             ),
             // num + pointer
-            (false, true) => Node::new_add(rhs, lhs),
+            (false, true) => Self::new_add(rhs, lhs),
             // num + num
-            (false, false) => Node::new_bin(BinOp::Add, lhs, rhs),
+            (false, false) => Self::new_bin(BinOp::Add, lhs, rhs),
             // pointer + pointer
             (true, true) => unimplemented!(),
         }
     }
 
-    pub fn new_sub(lhs: Node, rhs: Node) -> Self {
+    pub fn new_sub(lhs: Self, rhs: Self) -> Self {
         match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
             // pointer - num
-            (true, false) => Node::new_bin(
+            (true, false) => Self::new_bin(
                 BinOp::Add,
                 lhs,
-                Self::new_bin(BinOp::Mul, Node::new(NodeKind::Num(8)), rhs),
+                Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(8)), rhs),
             ),
             // pointer - pointer, which returns how many elements are between the two.
             // 変数スタックはマイナス方向に伸びるため(ex. int x, y -> &x=-8, &y=-16),
             // &x-&yしてやると差分のポインタが得られる
-            (true, true) => Node::new_bin(
+            (true, true) => Self::new_bin(
                 BinOp::Div,
-                Node::new_bin(BinOp::Sub, rhs, lhs),
-                Node::new(NodeKind::Num(8)),
+                Self::new_bin(BinOp::Sub, rhs, lhs),
+                Self::new(NodeKind::Num(8)),
             ),
             // num - num
-            (false, false) => Node::new_bin(BinOp::Sub, lhs, rhs),
+            (false, false) => Self::new_bin(BinOp::Sub, lhs, rhs),
             // num - pointer
             (false, true) => unimplemented!(),
         }
     }
 
-    pub fn new_if(cond: Node, then: Node, els: Option<Node>) -> Self {
+    pub fn new_if(cond: Self, then: Self, els: Option<Self>) -> Self {
         let kind = NodeKind::If {
             cond: Box::new(cond),
             then: Box::new(then),
             els: Box::new(els),
         };
-        Node::new(kind)
+        Self::new(kind)
     }
 
-    pub fn new_for(cond: Option<Node>, then: Node, init: Node, inc: Option<Node>) -> Self {
+    pub fn new_for(cond: Option<Self>, then: Self, init: Self, inc: Option<Self>) -> Self {
         let kind = NodeKind::For {
             cond: Box::new(cond),
             then: Box::new(then),
             init: Box::new(init),
             inc: Box::new(inc),
         };
-        Node::new(kind)
+        Self::new(kind)
     }
 
-    pub fn new_while(cond: Node, then: Node) -> Self {
+    pub fn new_while(cond: Self, then: Self) -> Self {
         let kind = NodeKind::While {
             cond: Box::new(cond),
             then: Box::new(then),
         };
-        Node::new(kind)
+        Self::new(kind)
     }
 
     pub fn new_var_node(var: Var) -> Self {
         let kind = NodeKind::Var(var);
-        Node::new(kind)
+        Self::new(kind)
     }
 
-    pub fn new_block_node(nodes: Vec<Node>) -> Self {
+    pub fn new_block_node(nodes: Vec<Self>) -> Self {
         let kind = NodeKind::Block(nodes);
-        Node::new(kind)
+        Self::new(kind)
     }
 
     // stmt = "return" expr ";"
@@ -211,12 +211,12 @@ impl Node {
     //      | "while" "(" expr ")" stmt
     //      | "{" compound-stmt
     //      | expr-stmt
-    fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
         // FIXME Multiple Borrowを避けるためにcloneしているが如何なものか
         let tok = tok_peek.peek().unwrap().clone();
         if tok.equal("return") {
             tok_peek.next();
-            let node = Node::new_unary(UnaryOp::Return, Node::expr(tok_peek, locals));
+            let node = Self::new_unary(UnaryOp::Return, Self::expr(tok_peek, locals));
             skip(tok_peek, ";");
             return node;
         }
@@ -224,113 +224,113 @@ impl Node {
         if tok.equal("if") {
             tok_peek.next();
             skip(tok_peek, "(");
-            let cond = Node::expr(tok_peek, locals);
+            let cond = Self::expr(tok_peek, locals);
             skip(tok_peek, ")");
-            let then = Node::stmt(tok_peek, locals);
+            let then = Self::stmt(tok_peek, locals);
             let next_tok = tok_peek.peek().map(|x| (*x).clone()); // 実体のコピー
             let els = next_tok.filter(|tok| tok.equal("else")).map(|_| {
                 tok_peek.next();
-                Node::stmt(tok_peek, locals)
+                Self::stmt(tok_peek, locals)
             });
-            return Node::new_if(cond, then, els);
+            return Self::new_if(cond, then, els);
         }
 
         if tok.equal("for") {
             tok_peek.next();
             skip(tok_peek, "(");
 
-            let init = Node::expr_stmt(tok_peek, locals);
+            let init = Self::expr_stmt(tok_peek, locals);
 
             let next_tok = tok_peek.peek().map(|x| (*x).clone());
             let cond = next_tok
                 .filter(|tok| !tok.equal(";"))
-                .map(|_| Node::expr(tok_peek, locals));
+                .map(|_| Self::expr(tok_peek, locals));
             skip(tok_peek, ";");
 
             let next_tok = tok_peek.peek().map(|x| (*x).clone());
             let inc = next_tok
                 .filter(|tok| !tok.equal(")"))
-                .map(|_| Node::expr(tok_peek, locals));
+                .map(|_| Self::expr(tok_peek, locals));
             skip(tok_peek, ")");
 
-            let then = Node::stmt(tok_peek, locals);
-            return Node::new_for(cond, then, init, inc);
+            let then = Self::stmt(tok_peek, locals);
+            return Self::new_for(cond, then, init, inc);
         }
 
         if tok.equal("while") {
             tok_peek.next();
             skip(tok_peek, "(");
-            let cond = Node::expr(tok_peek, locals);
+            let cond = Self::expr(tok_peek, locals);
             skip(tok_peek, ")");
-            let then = Node::stmt(tok_peek, locals);
-            return Node::new_while(cond, then);
+            let then = Self::stmt(tok_peek, locals);
+            return Self::new_while(cond, then);
         }
 
         if tok.equal("{") {
             tok_peek.next();
-            return Node::compound_stmt(tok_peek, locals);
+            return Self::compound_stmt(tok_peek, locals);
         }
-        Node::expr_stmt(tok_peek, locals)
+        Self::expr_stmt(tok_peek, locals)
     }
 
     // compound-stmt = stmt* "}"
-    fn compound_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn compound_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
         let mut nodes = vec![];
 
         while tok_peek.peek().filter(|tok| !tok.equal("}")).is_some() {
-            let node = Node::stmt(tok_peek, locals);
+            let node = Self::stmt(tok_peek, locals);
             nodes.push(node);
         }
 
         skip(tok_peek, "}");
-        Node::new_block_node(nodes)
+        Self::new_block_node(nodes)
     }
 
     // expr-stmt = expr? ";"
-    fn expr_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn expr_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
         // FIXME Nullのため, OptionかNoneという処理を入れたほうが良い?
         if let Some(true) = tok_peek.peek().and_then(|tok| Some(tok.equal(";"))) {
             tok_peek.next();
-            return Node::new_block_node(vec![]);
+            return Self::new_block_node(vec![]);
         }
 
-        let node = Node::new_unary(UnaryOp::ExprStmt, Node::expr(tok_peek, locals));
+        let node = Self::new_unary(UnaryOp::ExprStmt, Self::expr(tok_peek, locals));
         skip(tok_peek, ";");
         return node;
     }
 
     // expr = assign
-    fn expr(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
-        Node::assign(tok_peek, locals)
+    fn expr(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
+        Self::assign(tok_peek, locals)
     }
 
     // assign = equality ("=" assign)?
-    fn assign(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
-        let mut node = Node::equality(tok_peek, locals);
+    fn assign(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
+        let mut node = Self::equality(tok_peek, locals);
         let tok = tok_peek.peek().unwrap();
         if tok.equal("=") {
             tok_peek.next();
-            node = Node::new_bin(BinOp::Assign, node, Node::assign(tok_peek, locals));
+            node = Self::new_bin(BinOp::Assign, node, Self::assign(tok_peek, locals));
         }
         node
     }
 
     // equality = relational ("==" relational | "!=" relational)
-    fn equality(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
-        let mut node = Node::relational(tok_peek, locals);
+    fn equality(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
+        let mut node = Self::relational(tok_peek, locals);
 
         loop {
             let tok = tok_peek.peek().unwrap();
             if tok.equal("==") {
                 tok_peek.next();
-                let rhs = Node::relational(tok_peek, locals);
-                node = Node::new_bin(BinOp::Equal, node, rhs);
+                let rhs = Self::relational(tok_peek, locals);
+                node = Self::new_bin(BinOp::Equal, node, rhs);
                 continue;
             }
             if tok.equal("!=") {
                 tok_peek.next();
-                let rhs = Node::relational(tok_peek, locals);
-                node = Node::new_bin(BinOp::NEqual, node, rhs);
+                let rhs = Self::relational(tok_peek, locals);
+                node = Self::new_bin(BinOp::NEqual, node, rhs);
                 continue;
             }
             return node;
@@ -338,34 +338,34 @@ impl Node {
     }
 
     // relational = add ("<" add | "<=" add | ">" add | ">=" add)*
-    fn relational(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
-        let mut node = Node::add(tok_peek, locals);
+    fn relational(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
+        let mut node = Self::add(tok_peek, locals);
 
         loop {
             let tok = tok_peek.peek().unwrap();
             if tok.equal("<") {
                 tok_peek.next();
-                let rhs = Node::add(tok_peek, locals);
-                node = Node::new_bin(BinOp::Lt, node, rhs);
+                let rhs = Self::add(tok_peek, locals);
+                node = Self::new_bin(BinOp::Lt, node, rhs);
                 continue;
             }
 
             if tok.equal("<=") {
                 tok_peek.next();
-                let rhs = Node::add(tok_peek, locals);
-                node = Node::new_bin(BinOp::Le, node, rhs);
+                let rhs = Self::add(tok_peek, locals);
+                node = Self::new_bin(BinOp::Le, node, rhs);
                 continue;
             }
             if tok.equal(">") {
                 tok_peek.next();
-                let rhs = Node::add(tok_peek, locals);
-                node = Node::new_bin(BinOp::Lt, rhs, node);
+                let rhs = Self::add(tok_peek, locals);
+                node = Self::new_bin(BinOp::Lt, rhs, node);
                 continue;
             }
             if tok.equal(">=") {
                 tok_peek.next();
-                let rhs = Node::add(tok_peek, locals);
-                node = Node::new_bin(BinOp::Le, rhs, node);
+                let rhs = Self::add(tok_peek, locals);
+                node = Self::new_bin(BinOp::Le, rhs, node);
                 continue;
             }
             return node;
@@ -373,20 +373,20 @@ impl Node {
     }
 
     // add = mul ("+" mul | "-" mul)*
-    fn add(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
-        let mut node = Node::mul(tok_peek, locals);
+    fn add(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
+        let mut node = Self::mul(tok_peek, locals);
         loop {
             let tok = tok_peek.peek().unwrap();
             if tok.equal("+") {
                 tok_peek.next();
-                let rhs = Node::mul(tok_peek, locals);
-                node = Node::new_add(node, rhs);
+                let rhs = Self::mul(tok_peek, locals);
+                node = Self::new_add(node, rhs);
                 continue;
             }
             if tok.equal("-") {
                 tok_peek.next();
-                let rhs = Node::mul(tok_peek, locals);
-                node = Node::new_sub(node, rhs);
+                let rhs = Self::mul(tok_peek, locals);
+                node = Self::new_sub(node, rhs);
                 continue;
             }
             return node;
@@ -394,21 +394,21 @@ impl Node {
     }
 
     // mul = unary ("*" unary | "/" unary)*
-    fn mul(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
-        let mut node = Node::unary(tok_peek, locals);
+    fn mul(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
+        let mut node = Self::unary(tok_peek, locals);
 
         loop {
             let tok = tok_peek.peek().unwrap();
             if tok.equal("*") {
                 tok_peek.next();
-                let rhs = Node::unary(tok_peek, locals);
-                node = Node::new_bin(BinOp::Mul, node, rhs);
+                let rhs = Self::unary(tok_peek, locals);
+                node = Self::new_bin(BinOp::Mul, node, rhs);
                 continue;
             }
             if tok.equal("/") {
                 tok_peek.next();
-                let rhs = Node::unary(tok_peek, locals);
-                node = Node::new_bin(BinOp::Div, node, rhs);
+                let rhs = Self::unary(tok_peek, locals);
+                node = Self::new_bin(BinOp::Div, node, rhs);
                 continue;
             }
             return node;
@@ -417,38 +417,38 @@ impl Node {
 
     // unary = ("+" | "-" | "*" | "&") unary
     //       | primary
-    fn unary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn unary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
         let tok = tok_peek.peek().unwrap();
         if tok.equal("+") {
             tok_peek.next();
-            return Node::unary(tok_peek, locals);
+            return Self::unary(tok_peek, locals);
         }
         if tok.equal("-") {
             tok_peek.next();
-            return Node::new_bin(
+            return Self::new_bin(
                 BinOp::Sub,
-                Node::new(NodeKind::Num(0)),
-                Node::unary(tok_peek, locals),
+                Self::new(NodeKind::Num(0)),
+                Self::unary(tok_peek, locals),
             );
         }
         if tok.equal("&") {
             tok_peek.next();
-            return Node::new_unary(UnaryOp::Addr, Node::unary(tok_peek, locals));
+            return Self::new_unary(UnaryOp::Addr, Self::unary(tok_peek, locals));
         }
 
         if tok.equal("*") {
             tok_peek.next();
-            return Node::new_unary(UnaryOp::Deref, Node::unary(tok_peek, locals));
+            return Self::new_unary(UnaryOp::Deref, Self::unary(tok_peek, locals));
         }
 
-        return Node::primary(tok_peek, locals);
+        return Self::primary(tok_peek, locals);
     }
 
     // primary = "(" expr ")" | ident | num
-    fn primary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn primary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
         let tok = tok_peek.next().unwrap();
         if tok.equal("(") {
-            let node = Node::expr(tok_peek, locals);
+            let node = Self::expr(tok_peek, locals);
             skip(tok_peek, ")");
             return node;
         }
@@ -462,7 +462,7 @@ impl Node {
                     x
                 };
 
-                Node::new_var_node(var)
+                Self::new_var_node(var)
             }
             _ => {
                 // TODO ここの処理をもう少し綺麗にする
@@ -470,9 +470,9 @@ impl Node {
                     x
                 } else {
                     error(&format!("token number parse error: {:?}", tok));
-                    0
+                    unimplemented!()
                 };
-                Node::new(NodeKind::Num(x))
+                Self::new(NodeKind::Num(x))
             }
         }
     }
