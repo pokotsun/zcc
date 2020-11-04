@@ -17,7 +17,7 @@ impl Type {
 
     pub fn is_ptr(self) -> bool {
         match self {
-            Type::Ptr(_) => true,
+            Self::Ptr(_) => true,
             _ => false,
         }
     }
