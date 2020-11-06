@@ -1,23 +1,36 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Debug)]
-pub enum Type {
+#[derive(Clone, Debug)]
+pub enum TypeKind {
     Int,
-    Ptr(Rc<Type>),
+    Ptr(Rc<TypeKind>),
+}
+
+#[derive(Clone, Debug)]
+pub struct Type {
+    kind: TypeKind,
+    pub name: RefCell<String>,
 }
 
 impl Type {
+    fn new(kind: TypeKind, name: String) -> Self {
+        Self {
+            kind,
+            name: RefCell::new(name),
+        }
+    }
     pub fn new_int() -> Self {
-        Self::Int
+        Self::new(TypeKind::Int, String::new())
     }
 
-    pub fn pointer_to(base: Self) -> Self {
-        Self::Ptr(Rc::new(base))
+    pub fn pointer_to(base: Type) -> Self {
+        Self::new(TypeKind::Ptr(Rc::new(base.kind)), String::new())
     }
 
     pub fn is_ptr(self) -> bool {
-        match self {
-            Self::Ptr(_) => true,
+        match self.kind {
+            TypeKind::Ptr(_) => true,
             _ => false,
         }
     }

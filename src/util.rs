@@ -1,3 +1,4 @@
+use crate::tokenize::Token;
 use itertools::structs::MultiPeek;
 use std::iter::{Enumerate, Iterator};
 use std::process;
@@ -22,6 +23,11 @@ pub fn error_at(loc: usize, line: &str, err_msg: &str) {
     eprintln!("{}", line);
     eprintln!("{}", " ".repeat(loc) + &format!("^ {}", err_msg));
     process::exit(1);
+}
+
+pub fn error_tok(tok: &Token, err_msg: &str) {
+    eprintln!("{}", tok.word);
+    error(err_msg);
 }
 
 pub fn strtol(chars: &mut MultiPeek<Enumerate<Chars>>) -> i64 {
