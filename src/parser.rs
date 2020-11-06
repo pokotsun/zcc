@@ -15,7 +15,7 @@
 // Most parsing functions don't change the global state of the parser.
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
-use crate::tokenize::{consume, skip, Token, TokenKind};
+use crate::tokenize::{consume, next_equal, skip, Token, TokenKind};
 use crate::types::Type;
 use crate::util::{align_to, error, error_tok};
 use std::cell::Cell;
@@ -242,7 +242,7 @@ impl Node {
 
         let mut is_already_declared = false;
         let mut nodes = Vec::new();
-        while let Some(_) = tok_peek.peek().filter(|tok| !tok.equal(";")) {
+        while !next_equal(tok_peek, ";") {
             if is_already_declared {
                 skip(tok_peek, ",");
             }
@@ -256,7 +256,7 @@ impl Node {
             let rcvar = var.clone();
             locals.push_front(var);
 
-            if let Some(_) = tok_peek.peek().filter(|tok| !tok.equal("=")) {
+            if !next_equal(tok_peek, "=") {
                 continue;
             }
             let lhs = Self::new_var_node(rcvar);
@@ -346,8 +346,8 @@ impl Node {
     fn compound_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let mut nodes = vec![];
 
-        while tok_peek.peek().filter(|tok| !tok.equal("}")).is_some() {
-            let node = if tok_peek.peek().filter(|tok| tok.equal("int")).is_some() {
+        while !next_equal(tok_peek, "}") {
+            let node = if next_equal(tok_peek, "int") {
                 Self::declaration(tok_peek, locals)
             } else {
                 Self::stmt(tok_peek, locals)
@@ -362,7 +362,7 @@ impl Node {
     // expr-stmt = expr? ";"
     fn expr_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         // FIXME Nullのため, OptionかNoneという処理を入れたほうが良い?
-        if let Some(true) = tok_peek.peek().and_then(|tok| Some(tok.equal(";"))) {
+        if next_equal(tok_peek, ";") {
             tok_peek.next();
             return Self::new_block_node(vec![]);
         }
