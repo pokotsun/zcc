@@ -14,9 +14,10 @@
 // descent parsers, we don't have the notion of the "input token stream".
 // Most parsing functions don't change the global state of the parser.
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
-use crate::tokenize::{skip, Token, TokenKind};
+
+use crate::tokenize::{consume, skip, Token, TokenKind};
 use crate::types::Type;
-use crate::util::{align_to, error};
+use crate::util::{align_to, error, error_tok};
 use std::iter::Peekable;
 use std::slice::Iter;
 //
@@ -79,11 +80,17 @@ pub enum NodeKind {
 pub struct Var {
     pub name: String,
     pub offset: usize,
+    pub ty: Type,
 }
 
 impl Var {
-    fn new_lvar(name: String, offset: usize) -> Var {
-        Var { name, offset }
+    fn new_lvar(name: String, offset: usize, ty: Type) -> Var {
+        Var { name, offset, ty }
+    }
+
+    // 変数間のoffsetを計算するUtil関数 将来的に消す
+    fn calc_offset<T>(locals: &mut Vec<T>) -> usize {
+        32 + (locals.len() + 1) * 8
     }
 }
 
@@ -101,7 +108,7 @@ impl Node {
     pub fn get_type(&self) -> Type {
         match &self.kind {
             NodeKind::Unary(op, child) => match op {
-                UnaryOp::Addr => Type::pointer_to(child.get_type()),
+                UnaryOp::Addr => Type::pointer_to(child.get_type(), String::new()),
                 UnaryOp::Deref => child.get_type(),
                 _ => unreachable!(),
             },
@@ -109,7 +116,8 @@ impl Node {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Assign => lhs.get_type(),
                 BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => Type::new_int(),
             },
-            NodeKind::Var(_) | NodeKind::Num(_) => Type::new_int(),
+            NodeKind::Var(var) => var.ty.clone(),
+            NodeKind::Num(_) => Type::new_int(),
             _ => unreachable!(),
         }
     }
@@ -205,6 +213,61 @@ impl Node {
         Self::new(kind)
     }
 
+    // typespec = "int"
+    pub fn typespec(tok_peek: &mut Peekable<Iter<Token>>) -> Type {
+        skip(tok_peek, "int");
+        Type::new_int()
+    }
+
+    // declarator = "*"* ident
+    pub fn declarator(tok_peek: &mut Peekable<Iter<Token>>, mut ty: Type) -> Type {
+        // FIXME なんか凄く汚い
+        while consume(tok_peek, "*") {
+            ty = Type::pointer_to(ty, String::new());
+        }
+        let tok = tok_peek.next().unwrap();
+        if !matches!(tok.kind, TokenKind::Ident(_)) {
+            error_tok(tok, "invalid pointer dereference");
+        }
+        ty.name.replace(tok.word.clone());
+        ty
+    }
+
+    // declaration = typespec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
+    fn declaration(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
+        // TODO ここも Self::typespecである必要ないのでは?
+        let basety = Self::typespec(tok_peek);
+
+        let mut is_already_declared = false;
+        let mut nodes = Vec::new();
+        while let Some(_) = tok_peek.peek().filter(|tok| !tok.equal(";")) {
+            if is_already_declared {
+                skip(tok_peek, ",");
+            }
+            is_already_declared = true;
+
+            let ty = Self::declarator(tok_peek, basety.clone());
+            let var = Var::new_lvar(
+                ty.name.borrow().clone(),
+                Var::calc_offset(locals),
+                ty.clone(),
+            );
+            locals.push(var.clone());
+
+            if let Some(_) = tok_peek.peek().filter(|tok| !tok.equal("=")) {
+                continue;
+            }
+            let lhs = Self::new_var_node(var);
+            tok_peek.next(); // "=" tokenを飛ばす
+            let rhs = Self::assign(tok_peek, locals);
+            let node = Self::new_bin(BinOp::Assign, lhs, rhs);
+            let node = Self::new_unary(UnaryOp::ExprStmt, node);
+            nodes.push(node);
+        }
+        let node = Self::new_block_node(nodes);
+        node
+    }
+
     // stmt = "return" expr ";"
     //      | "if" "(" expr ")" stmt ("else" stmt)?
     //      | "for" "(" expr-stmt expr? ";" expr? ")" stmt
@@ -273,12 +336,16 @@ impl Node {
         Self::expr_stmt(tok_peek, locals)
     }
 
-    // compound-stmt = stmt* "}"
+    // compound-stmt = (declaration | stmt)* "}"
     fn compound_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
-        let mut nodes = vec![];
+        let mut nodes = Vec::new();
 
         while tok_peek.peek().filter(|tok| !tok.equal("}")).is_some() {
-            let node = Self::stmt(tok_peek, locals);
+            let node = if tok_peek.peek().filter(|tok| tok.equal("int")).is_some() {
+                Self::declaration(tok_peek, locals)
+            } else {
+                Self::stmt(tok_peek, locals)
+            };
             nodes.push(node);
         }
 
@@ -457,9 +524,9 @@ impl Node {
                 let var = if let Some(x) = locals.iter().find(|x| x.name == *name) {
                     x.clone()
                 } else {
-                    let x = Var::new_lvar(name.clone(), 32 + (locals.len() + 1) * 8);
-                    locals.push(x.clone());
-                    x
+                    error_tok(tok, "undefined variable");
+                    // FIXME 綺麗にする
+                    locals[0].clone()
                 };
 
                 Self::new_var_node(var)

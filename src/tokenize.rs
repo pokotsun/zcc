@@ -1,6 +1,7 @@
 use crate::util::*;
 use itertools::multipeek;
-use std::iter::Iterator;
+use std::iter::{Iterator, Peekable};
+use std::slice::Iter;
 
 // FIXME IdentのStringとwordは役割が被っていないか?
 #[derive(Debug)]
@@ -39,10 +40,17 @@ impl Token {
         }
         None
     }
+
+    pub fn get_ident(&self) -> Option<String> {
+        if let TokenKind::Ident(_) = self.kind {
+            return Some(self.word.clone());
+        }
+        None
+    }
 }
 
 fn is_keyword(target: &str) -> bool {
-    let keywords = ["return", "if", "else", "for", "while"];
+    let keywords = ["return", "if", "else", "for", "while", "int"];
     keywords.iter().any(|keyword| target == *keyword)
 }
 
@@ -51,6 +59,14 @@ pub fn skip<'a>(tok_iter: &mut impl Iterator<Item = &'a Token>, s: &str) {
     if !tok.equal(s) {
         error_tok(&tok, &format!("expected '{}', but got {}", s, tok.word));
     }
+}
+
+pub fn consume<'a>(tok_iter: &mut Peekable<Iter<Token>>, s: &str) -> bool {
+    let is_equaled = tok_iter.peek().filter(|tok| tok.equal(s)).cloned();
+    if let Some(_) = is_equaled {
+        tok_iter.next();
+    }
+    is_equaled.is_some()
 }
 
 pub fn tokenize(line: String) -> Vec<Token> {
@@ -160,7 +176,7 @@ pub fn tokenize(line: String) -> Vec<Token> {
                 tokens.push(token);
             }
             // Punctuator
-            '+' | '-' | '*' | '/' | '(' | ')' | ';' | '{' | '}' | '&' => {
+            '+' | '-' | '*' | '/' | '(' | ')' | ',' | ';' | '{' | '}' | '&' => {
                 chars_peek.next();
                 let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
                 tokens.push(token);
