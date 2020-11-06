@@ -1,6 +1,7 @@
 use crate::util::*;
 use itertools::multipeek;
 use std::iter::{Iterator, Peekable};
+use std::rc::Rc;
 use std::slice::Iter;
 
 // FIXME IdentのStringとwordは役割が被っていないか?
@@ -16,12 +17,12 @@ pub enum TokenKind {
 pub struct Token {
     pub kind: TokenKind, // Token kind
     loc: usize,          // Token location
-    line: String,        // Line which exists token
+    line: Rc<String>,    // Line which exists token
     pub word: String,    // Token word
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, loc: usize, line: String, word: String) -> Self {
+    pub fn new(kind: TokenKind, loc: usize, line: Rc<String>, word: String) -> Self {
         Token {
             kind,
             loc,
@@ -61,15 +62,20 @@ pub fn skip<'a>(tok_iter: &mut impl Iterator<Item = &'a Token>, s: &str) {
     }
 }
 
-pub fn consume<'a>(tok_iter: &mut Peekable<Iter<Token>>, s: &str) -> bool {
-    let is_equaled = tok_iter.peek().filter(|tok| tok.equal(s)).cloned();
-    if let Some(_) = is_equaled {
-        tok_iter.next();
+pub fn consume<'a>(tok_peek: &mut Peekable<Iter<Token>>, s: &str) -> bool {
+    let is_equaled = next_equal(tok_peek, s);
+    if is_equaled {
+        tok_peek.next();
     }
-    is_equaled.is_some()
+    is_equaled
+}
+
+pub fn next_equal(tok_peek: &mut Peekable<Iter<Token>>, s: &str) -> bool {
+    tok_peek.peek().filter(|tok| tok.equal(s)).is_some()
 }
 
 pub fn tokenize(line: String) -> Vec<Token> {
+    let line = Rc::new(line);
     let mut chars_peek = multipeek(line.chars().enumerate());
     let mut tokens = Vec::new();
 
