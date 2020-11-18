@@ -73,6 +73,9 @@ pub enum NodeKind {
         then: Box<Node>,
     },
     Block(Vec<Node>), // { ... }
+    FunCall {
+        name: String,
+    }, // Function call
 }
 
 // Local Variable
@@ -117,7 +120,7 @@ impl Node {
                 BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => Type::new_int(),
             },
             NodeKind::Var(var) => var.ty.clone(),
-            NodeKind::Num(_) => Type::new_int(),
+            NodeKind::Num(_) | NodeKind::FunCall { name: _ } => Type::new_int(),
             _ => unreachable!(),
         }
     }
@@ -511,7 +514,8 @@ impl Node {
         return Self::primary(tok_peek, locals);
     }
 
-    // primary = "(" expr ")" | ident | num
+    // primary = "(" expr ")" | ident args? | num
+    // args = "(" ")"
     fn primary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
         let tok = tok_peek.next().unwrap();
         if tok.equal("(") {
@@ -521,6 +525,13 @@ impl Node {
         }
         match &tok.kind {
             TokenKind::Ident(name) => {
+                if next_equal(tok_peek, "(") {
+                    tok_peek.next();
+                    let node = Node::new(NodeKind::FunCall { name: name.clone() });
+                    skip(tok_peek, ")");
+                    return node;
+                }
+
                 let var = if let Some(x) = locals.iter().find(|x| x.name == *name) {
                     x.clone()
                 } else {
@@ -528,7 +539,6 @@ impl Node {
                     // FIXME 綺麗にする
                     locals[0].clone()
                 };
-
                 Self::new_var_node(var)
             }
             _ => {

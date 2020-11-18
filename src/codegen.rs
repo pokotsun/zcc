@@ -119,6 +119,16 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
         NodeKind::Unary(UnaryOp::Addr, child) => {
             top = gen_addr(child, top).unwrap();
         }
+        NodeKind::FunCall { name } => {
+            println!("  push %r10");
+            println!("  push %r11");
+            println!("  mov $0, %rax");
+            println!("  call {}", name);
+            println!("  mov %rax, {}", reg(top));
+            top += 1;
+            println!("  push %r11");
+            println!("  push %r10");
+        }
         _ => {
             error(&format!("invalid expression: {:?}", node));
         }
