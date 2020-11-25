@@ -25,8 +25,15 @@ impl Iterator for LabelCounter {
 }
 
 const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
+const ARG_REGISTERS: [&str; 6] = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
 pub fn reg(idx: usize) -> &'static str {
     REGISTERS
+        .get(idx)
+        .expect(&format!("register out of range: {}", idx))
+}
+
+pub fn arg_reg(idx: usize) -> &'static str {
+    ARG_REGISTERS
         .get(idx)
         .expect(&format!("register out of range: {}", idx))
 }
@@ -119,15 +126,23 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
         NodeKind::Unary(UnaryOp::Addr, child) => {
             top = gen_addr(child, top).unwrap();
         }
-        NodeKind::FunCall { name } => {
+        NodeKind::FunCall { name, args } => {
+            let nargs = args.len();
+            args.iter().for_each(|arg| top = gen_expr(arg, top));
+
+            for i in 1..=nargs {
+                top -= 1;
+                println!("  mov {}, {}", reg(top), arg_reg(nargs - i));
+            }
+
             println!("  push %r10");
             println!("  push %r11");
             println!("  mov $0, %rax");
             println!("  call {}", name);
+            println!("  pop %r11");
+            println!("  pop %r10");
             println!("  mov %rax, {}", reg(top));
             top += 1;
-            println!("  push %r11");
-            println!("  push %r10");
         }
         _ => {
             error(&format!("invalid expression: {:?}", node));

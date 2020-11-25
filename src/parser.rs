@@ -80,6 +80,7 @@ pub enum NodeKind {
     Block(Vec<Node>), // { ... }
     FunCall {
         name: String,
+        args: Vec<Node>,
     }, // Function call
 }
 
@@ -124,7 +125,7 @@ impl Node {
                 BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => Type::new_int(),
             },
             NodeKind::Var { var } => var.ty.clone(),
-            NodeKind::Num(_) | NodeKind::FunCall { name: _ } => Type::new_int(),
+            NodeKind::Num(_) | NodeKind::FunCall { .. } => Type::new_int(),
             _ => unreachable!(),
         }
     }
@@ -520,7 +521,30 @@ impl Node {
         return Self::primary(tok_peek, locals);
     }
 
-    // primary = "(" expr ")" | ident | num
+    // funcall = ident "(" (assign (",", assign)*)? ")"
+    fn funcall(
+        func_name: String,
+        tok_peek: &mut Peekable<Iter<Token>>,
+        locals: &mut VecDeque<Rc<Var>>,
+    ) -> Self {
+        skip(tok_peek, "(");
+
+        let mut args = Vec::new();
+        while !next_equal(tok_peek, ")") {
+            if args.len() > 0 {
+                skip(tok_peek, ",");
+            }
+            let arg = Node::assign(tok_peek, locals);
+            args.push(arg);
+        }
+        skip(tok_peek, ")");
+        Node::new(NodeKind::FunCall {
+            name: func_name.to_string(),
+            args,
+        })
+    }
+
+    // primary = "(" expr ")" | ident func-args? | num
     fn primary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let tok = tok_peek.next().unwrap();
         if tok.equal("(") {
@@ -530,13 +554,12 @@ impl Node {
         }
         match &tok.kind {
             TokenKind::Ident(name) => {
+                // Function call
                 if next_equal(tok_peek, "(") {
-                    tok_peek.next();
-                    let node = Node::new(NodeKind::FunCall { name: name.clone() });
-                    skip(tok_peek, ")");
-                    return node;
+                    return Node::funcall(name.to_string(), tok_peek, locals);
                 }
 
+                // variable
                 let var = if let Some(x) = locals.iter().find(|x| x.name == *name) {
                     x.clone()
                 } else {
