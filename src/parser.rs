@@ -16,7 +16,7 @@
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
 use crate::tokenize::{consume, next_equal, skip, Token, TokenKind};
-use crate::types::Type;
+use crate::types::{Type, TypeKind};
 use crate::util::{align_to, error, error_tok};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -219,13 +219,65 @@ impl Node {
         Self::new(kind)
     }
 
+    // funcdef = typespec declarator compound-stmt
+    pub fn funcdef(tok_peek: &mut Peekable<Iter<Token>>) -> Function {
+        let mut locals = VecDeque::new();
+
+        let mut ty = Node::typespec(tok_peek);
+        ty = Node::declarator(tok_peek, ty);
+
+        let func_name = ty.name.into_inner();
+        let mut var_params = VecDeque::new();
+        if let TypeKind::Func {
+            return_ty: _,
+            params,
+        } = ty.kind
+        {
+            for param in params.iter() {
+                // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
+                // 一旦無効な値0を入れる
+                let var = Var::new_lvar(param.name.borrow().clone(), 0, param.clone());
+                let var = Rc::new(var);
+                var_params.push_front(var.clone());
+                locals.push_front(var.clone());
+            }
+        }
+
+        skip(tok_peek, "{");
+        let body = Node::compound_stmt(tok_peek, &mut locals);
+
+        Function::new(func_name, var_params, body, locals)
+    }
+
     // typespec = "int"
     pub fn typespec(tok_peek: &mut Peekable<Iter<Token>>) -> Type {
         skip(tok_peek, "int");
         Type::new_int()
     }
 
-    // declarator = "*"* ident
+    // type-suffix = ("(" func-params ")")?
+    // func-params = param ("," param)*
+    // param = typespec declarator
+    fn type_suffix(tok_peek: &mut Peekable<Iter<Token>>, ty: Type) -> Type {
+        if next_equal(tok_peek, "(") {
+            skip(tok_peek, "(");
+
+            let mut params = Vec::new();
+            while !next_equal(tok_peek, ")") {
+                if params.len() > 0 {
+                    skip(tok_peek, ",");
+                }
+                let basety = Self::typespec(tok_peek);
+                let ty = Self::declarator(tok_peek, basety.clone());
+                params.push(ty);
+            }
+            skip(tok_peek, ")");
+            return Type::new_func(ty.kind, params);
+        }
+        ty
+    }
+
+    // declarator = "*"* ident type-suffix
     pub fn declarator(tok_peek: &mut Peekable<Iter<Token>>, mut ty: Type) -> Type {
         // FIXME なんか凄く汚い
         while consume(tok_peek, "*") {
@@ -235,6 +287,7 @@ impl Node {
         if !matches!(tok.kind, TokenKind::Ident(_)) {
             error_tok(tok, "invalid pointer dereference");
         }
+        ty = Node::type_suffix(tok_peek, ty);
         ty.name.replace(tok.word.clone());
         ty
     }
@@ -584,6 +637,8 @@ impl Node {
 }
 
 pub struct Function {
+    pub name: String,
+    pub params: VecDeque<Rc<Var>>,
     pub body: Node,
     #[allow(dead_code)]
     locals: VecDeque<Rc<Var>>, // local variables
@@ -591,7 +646,7 @@ pub struct Function {
 }
 
 impl Function {
-    fn new(body: Node, locals: VecDeque<Rc<Var>>) -> Self {
+    fn new(name: String, params: VecDeque<Rc<Var>>, body: Node, locals: VecDeque<Rc<Var>>) -> Self {
         let mut offset = 32;
         for local in locals.iter() {
             offset += 8;
@@ -599,6 +654,8 @@ impl Function {
         }
         let stack_size = align_to(offset, 16);
         Self {
+            name,
+            params,
             body,
             locals,
             stack_size,
@@ -606,12 +663,14 @@ impl Function {
     }
 
     // program = stmt*
-    pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Self {
+    pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Vec<Self> {
         // All local variable instances created during parsing are
         // accumulated to this list.
-        let mut locals = VecDeque::new();
-        skip(tok_peek, "{");
-        let node = Node::compound_stmt(tok_peek, &mut locals);
-        Function::new(node, locals)
+        let mut funcs = Vec::new();
+        while !matches!(tok_peek.peek().unwrap().kind, TokenKind::Eof) {
+            let func = Node::funcdef(tok_peek);
+            funcs.push(func);
+        }
+        funcs
     }
 }
