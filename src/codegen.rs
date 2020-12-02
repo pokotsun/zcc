@@ -26,6 +26,7 @@ impl Iterator for LabelCounter {
 
 const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
 const ARG_REGISTERS: [&str; 6] = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+
 pub fn reg(idx: usize) -> &'static str {
     REGISTERS
         .get(idx)
@@ -152,14 +153,19 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 }
 
 // return register top index
-fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result<usize, String> {
+fn gen_stmt(
+    node: &Node,
+    label_counter: &mut LabelCounter,
+    func: &Function,
+    top: usize,
+) -> Result<usize, String> {
     let stack_top = match &node.kind {
         NodeKind::Unary(UnaryOp::Return, child) => {
             let top = gen_expr(child, top) - 1;
             // Set the result of the expression to RAX so that
             // the result becomes a return value of this function.
             println!("  mov {}, %rax", reg(top));
-            println!("  jmp .L.return");
+            println!("  jmp .L.return.{}", func.name);
 
             Ok(top)
         }
@@ -170,12 +176,12 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result
             println!("  cmp $0, {}", reg(top - 1));
             top -= 1;
             println!("  je .L.else.{}", c);
-            top = gen_stmt(then, label_counter, top)?;
+            top = gen_stmt(then, label_counter, func, top)?;
             println!("  jmp .L.end.{}", c);
             println!(".L.else.{}:", c);
 
             if let Some(node) = els.as_ref() {
-                top = gen_stmt(node, label_counter, top)?;
+                top = gen_stmt(node, label_counter, func, top)?;
             }
             println!(".L.end.{}:", c);
             Ok(top)
@@ -187,7 +193,7 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result
             inc,
         } => {
             let c = label_counter.next().unwrap();
-            let mut top = gen_stmt(init, label_counter, top)?;
+            let mut top = gen_stmt(init, label_counter, func, top)?;
             println!(".L.begin.{}:", c);
             if let Some(node) = cond.as_ref() {
                 top = gen_expr(node, top);
@@ -195,7 +201,7 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result
                 top -= 1;
                 println!("  je .L.end.{}", c);
             }
-            top = gen_stmt(then, label_counter, top)?;
+            top = gen_stmt(then, label_counter, func, top)?;
             if let Some(node) = inc.as_ref() {
                 top = gen_expr(node, top);
                 top -= 1;
@@ -211,13 +217,13 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result
             println!("  cmp $0, {}", reg(top - 1));
             top -= 1;
             println!("  je .L.end.{}", c);
-            top = gen_stmt(then, label_counter, top)?;
+            top = gen_stmt(then, label_counter, func, top)?;
             println!("  jmp .L.begin.{}", c);
             println!(".L.end.{}:", c);
             Ok(top)
         }
         NodeKind::Block(body) => body.iter().fold(Ok(top), |acc, node| {
-            acc.and_then(|x| gen_stmt(&node, label_counter, top).and_then(|y| Ok(x + y)))
+            acc.and_then(|x| gen_stmt(&node, label_counter, func, top).and_then(|y| Ok(x + y)))
         }),
         _ => Err(format!("invalid statement: {:?}", node)),
     };
@@ -228,33 +234,37 @@ fn gen_stmt(node: &Node, label_counter: &mut LabelCounter, top: usize) -> Result
     }
 }
 
-pub fn codegen(prog: &Function) {
+pub fn codegen(prog: Vec<Function>) {
     let mut label_counter = LabelCounter::new();
-    println!(".globl main");
-    println!("main:");
 
-    // Prologue %r12-15 are callee-saved registers.
-    println!("  push %rbp");
-    println!("  mov %rsp, %rbp"); // 現在のrspをrbpにセット
-    println!("  sub ${}, %rsp", prog.stack_size); // 関数の
-    println!("  mov %r12, -8(%rbp)");
-    println!("  mov %r13, -16(%rbp)");
-    println!("  mov %r14, -24(%rbp)");
-    println!("  mov %r15, -32(%rbp)");
+    for func in prog.iter() {
+        println!(".globl {}", func.name);
+        println!("{}:", func.name);
 
-    if let Err(msg) = gen_stmt(&prog.body, &mut label_counter, 0) {
-        error(&msg);
+        // Prologue %r12-15 are callee-saved registers.
+        println!("  push %rbp");
+        println!("  mov %rsp, %rbp"); // 現在のrspをrbpにセット
+        println!("  sub ${}, %rsp", func.stack_size); // 関数の
+        println!("  mov %r12, -8(%rbp)");
+        println!("  mov %r13, -16(%rbp)");
+        println!("  mov %r14, -24(%rbp)");
+        println!("  mov %r15, -32(%rbp)");
+
+        // Emit code
+        if let Err(msg) = gen_stmt(&func.body, &mut label_counter, &func, 0) {
+            error(&msg);
+        }
+
+        // Epilogue
+        println!(".L.return.{}:", func.name);
+        println!("  mov -8(%rbp), %r12");
+        println!("  mov -16(%rbp), %r13");
+        println!("  mov -24(%rbp), %r14");
+        println!("  mov -32(%rbp), %r15");
+        println!("  mov %rbp, %rsp"); // rbpをrspにセットすることで今の関数のreturnアドレスにrspを移動
+        println!("  pop %rbp");
+        // call命令はcallの次の命令のアドレスをスタックに積むため
+        // retすることでそのスタック上の値を読み出しcallの次の命令に移動
+        println!("  ret");
     }
-
-    // Epilogue
-    println!(".L.return:");
-    println!("  mov -8(%rbp), %r12");
-    println!("  mov -16(%rbp), %r13");
-    println!("  mov -24(%rbp), %r14");
-    println!("  mov -32(%rbp), %r15");
-    println!("  mov %rbp, %rsp"); // rbpをrspにセットすることで今の関数のreturnアドレスにrspを移動
-    println!("  pop %rbp");
-    // call命令はcallの次の命令のアドレスをスタックに積むため
-    // retすることでそのスタック上の値を読み出しcallの次の命令に移動
-    println!("  ret");
 }

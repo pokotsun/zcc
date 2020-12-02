@@ -24,5 +24,5 @@ fn main() {
 
     let prog = Function::parse(&mut tok_iter);
 
-    codegen(&prog);
+    codegen(prog);
 }

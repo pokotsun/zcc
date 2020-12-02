@@ -176,7 +176,6 @@ pub fn tokenize(line: String) -> Vec<Token> {
     }
     let eof = Token::new(TokenKind::Eof, line.len(), line.clone(), "EOF".to_string());
     tokens.push(eof);
-    eprintln!("tokens: {:#?}", tokens);
     tokens
 }
 

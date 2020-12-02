@@ -217,13 +217,38 @@ impl Node {
         Self::new(kind)
     }
 
+    // funcdef = typespec declarator compound-stmt
+    pub fn funcdef(tok_peek: &mut Peekable<Iter<Token>>) -> Function {
+        let mut locals = Vec::new();
+
+        let mut ty = Node::typespec(tok_peek);
+        ty = Node::declarator(tok_peek, ty);
+
+        let func_name = ty.name.into_inner();
+
+        skip(tok_peek, "{");
+        let body = Node::compound_stmt(tok_peek, &mut locals);
+
+        Function::new(func_name, body, locals)
+    }
+
     // typespec = "int"
     pub fn typespec(tok_peek: &mut Peekable<Iter<Token>>) -> Type {
         skip(tok_peek, "int");
         Type::new_int()
     }
 
-    // declarator = "*"* ident
+    // type-suffix = ("(" func-params)?
+    fn type_suffix(tok_peek: &mut Peekable<Iter<Token>>, ty: Type) -> Type {
+        if next_equal(tok_peek, "(") {
+            skip(tok_peek, "(");
+            skip(tok_peek, ")");
+            return Type::new_func(ty.kind);
+        }
+        ty
+    }
+
+    // declarator = "*"* ident type-suffix
     pub fn declarator(tok_peek: &mut Peekable<Iter<Token>>, mut ty: Type) -> Type {
         // FIXME なんか凄く汚い
         while consume(tok_peek, "*") {
@@ -233,6 +258,7 @@ impl Node {
         if !matches!(tok.kind, TokenKind::Ident(_)) {
             error_tok(tok, "invalid pointer dereference");
         }
+        ty = Node::type_suffix(tok_peek, ty);
         ty.name.replace(tok.word.clone());
         ty
     }
@@ -578,6 +604,7 @@ impl Node {
 }
 
 pub struct Function {
+    pub name: String,
     pub body: Node,
     #[allow(dead_code)]
     locals: Vec<Var>, // local variables
@@ -585,11 +612,12 @@ pub struct Function {
 }
 
 impl Function {
-    fn new(body: Node, locals: Vec<Var>) -> Self {
-        let offset = 32 + 8 * (locals.len());
+    fn new(name: String, body: Node, locals: Vec<Var>) -> Self {
+        let offset = 32 + 8 * (locals.len()); // 今後mapで変えるはず
         let stack_size = align_to(offset, 16);
 
         Self {
+            name,
             body,
             locals,
             stack_size,
@@ -597,12 +625,14 @@ impl Function {
     }
 
     // program = stmt*
-    pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Self {
+    pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Vec<Self> {
         // All local variable instances created during parsing are
         // accumulated to this list.
-        let mut locals = Vec::new();
-        skip(tok_peek, "{");
-        let node = Node::compound_stmt(tok_peek, &mut locals);
-        Function::new(node, locals)
+        let mut funcs = Vec::new();
+        while !matches!(tok_peek.peek().unwrap().kind, TokenKind::Eof) {
+            let func = Node::funcdef(tok_peek);
+            funcs.push(func);
+        }
+        funcs
     }
 }

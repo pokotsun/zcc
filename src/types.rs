@@ -5,11 +5,12 @@ use std::rc::Rc;
 pub enum TypeKind {
     Int,
     Ptr(Rc<TypeKind>),
+    Func(Rc<TypeKind>),
 }
 
 #[derive(Clone, Debug)]
 pub struct Type {
-    kind: TypeKind,
+    pub kind: TypeKind,
     pub name: RefCell<String>,
 }
 
@@ -21,6 +22,7 @@ impl Type {
         }
     }
     pub fn new_int() -> Self {
+        // FIXME ここのString::newは消せないのか?
         Self::new(TypeKind::Int, String::new())
     }
 
@@ -33,5 +35,9 @@ impl Type {
             TypeKind::Ptr(_) => true,
             _ => false,
         }
+    }
+
+    pub fn new_func(kind: TypeKind) -> Self {
+        Self::new(TypeKind::Func(Rc::new(kind)), String::new())
     }
 }
