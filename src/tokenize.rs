@@ -10,7 +10,6 @@ pub enum TokenKind {
     Reserved,
     Ident(String), // Identifiers
     Num(i64),
-    Eof,
 }
 
 #[derive(Debug)]
@@ -174,8 +173,6 @@ pub fn tokenize(line: String) -> Vec<Token> {
             _ => error_at(i, &line, "invalid token"),
         }
     }
-    let eof = Token::new(TokenKind::Eof, line.len(), line.clone(), "EOF".to_string());
-    tokens.push(eof);
     tokens
 }
 
@@ -191,7 +188,7 @@ mod test {
     fn tokenize_0() {
         let code = "1;".to_string();
         let tokenized = tokenize(code);
-        assert_eq!(tokenized.len(), 3);
+        assert_eq!(tokenized.len(), 2);
         assert_eq!(tokenized[0].word, "1");
         assert_eq!(tokenized[1].word, ";");
     }
@@ -200,7 +197,7 @@ mod test {
     fn tokenize_add_sub() {
         let code = "1+2-32;".to_string();
         let tokenized = tokenize(code);
-        assert_eq!(tokenized.len(), 7);
+        assert_eq!(tokenized.len(), 6);
         assert_eq!(tokenized[0].word, "1");
         assert_eq!(tokenized[1].word, "+");
         assert_eq!(tokenized[2].word, "2");
@@ -213,7 +210,7 @@ mod test {
     fn tokenize_multiple_letter_variable() {
         let code = "abc = 3;".to_string();
         let tokenized = tokenize(code);
-        assert_eq!(tokenized.len(), 5);
+        assert_eq!(tokenized.len(), 4);
         assert_eq!(tokenized[0].word, "abc");
         assert_eq!(tokenized[1].word, "=");
         assert_eq!(tokenized[2].word, "3");
@@ -223,7 +220,7 @@ mod test {
     fn tokenize_multiple_letter_with_num_variable() {
         let code = "abc123 = 3;".to_string();
         let tokenized = tokenize(code);
-        assert_eq!(tokenized.len(), 5);
+        assert_eq!(tokenized.len(), 4);
         assert_eq!(tokenized[0].word, "abc123");
         assert_eq!(tokenized[1].word, "=");
         assert_eq!(tokenized[2].word, "3");
@@ -233,10 +230,9 @@ mod test {
     fn tokenize_if_else() {
         let code = "{ if (1) return 2; else return 3; }".to_string();
         let tokenized = tokenize(code);
-        assert_eq!(tokenized.len(), 14);
+        assert_eq!(tokenized.len(), 13);
         assert_eq!(tokenized[1].word, "if");
         assert_eq!(tokenized[9].word, "return");
         assert_eq!(tokenized[10].word, "3");
-        assert_eq!(tokenized[13].word, "EOF");
     }
 }

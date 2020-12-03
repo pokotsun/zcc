@@ -667,7 +667,7 @@ impl Function {
         // All local variable instances created during parsing are
         // accumulated to this list.
         let mut funcs = Vec::new();
-        while !matches!(tok_peek.peek().unwrap().kind, TokenKind::Eof) {
+        while let Some(_) = tok_peek.peek() {
             let func = Node::funcdef(tok_peek);
             funcs.push(func);
         }
