@@ -250,6 +250,11 @@ pub fn codegen(prog: Vec<Function>) {
         println!("  mov %r14, -24(%rbp)");
         println!("  mov %r15, -32(%rbp)");
 
+        // Save arguments to the stack
+        for (i, param) in func.params.iter().enumerate() {
+            println!("  mov {}, -{}(%rbp)", arg_reg(i), param.offset)
+        }
+
         // Emit code
         if let Err(msg) = gen_stmt(&func.body, &mut label_counter, &func, 0) {
             error(&msg);

@@ -5,7 +5,10 @@ use std::rc::Rc;
 pub enum TypeKind {
     Int,
     Ptr(Rc<TypeKind>),
-    Func(Rc<TypeKind>),
+    Func {
+        return_ty: Rc<TypeKind>,
+        params: Vec<Type>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -37,7 +40,13 @@ impl Type {
         }
     }
 
-    pub fn new_func(kind: TypeKind) -> Self {
-        Self::new(TypeKind::Func(Rc::new(kind)), String::new())
+    pub fn new_func(kind: TypeKind, params: Vec<Type>) -> Self {
+        Self::new(
+            TypeKind::Func {
+                return_ty: Rc::new(kind),
+                params,
+            },
+            String::new(),
+        )
     }
 }

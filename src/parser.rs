@@ -16,7 +16,7 @@
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
 use crate::tokenize::{consume, next_equal, skip, Token, TokenKind};
-use crate::types::Type;
+use crate::types::{Type, TypeKind};
 use crate::util::{align_to, error, error_tok};
 use std::iter::Peekable;
 use std::slice::Iter;
@@ -93,7 +93,7 @@ impl Var {
     }
 
     // 変数間のoffsetを計算するUtil関数 将来的に消す
-    fn calc_offset<T>(locals: &mut Vec<T>) -> usize {
+    fn calc_offset<T>(locals: &Vec<T>) -> usize {
         32 + (locals.len() + 1) * 8
     }
 }
@@ -225,11 +225,27 @@ impl Node {
         ty = Node::declarator(tok_peek, ty);
 
         let func_name = ty.name.into_inner();
+        let mut var_params = Vec::new();
+        if let TypeKind::Func {
+            return_ty: _,
+            params,
+        } = ty.kind
+        {
+            for param in params.iter() {
+                let var = Var::new_lvar(
+                    param.name.borrow().clone(),
+                    Var::calc_offset(&var_params),
+                    param.clone(),
+                );
+                var_params.push(var.clone());
+                locals.push(var.clone());
+            }
+        }
 
         skip(tok_peek, "{");
         let body = Node::compound_stmt(tok_peek, &mut locals);
 
-        Function::new(func_name, body, locals)
+        Function::new(func_name, var_params, body, locals)
     }
 
     // typespec = "int"
@@ -238,12 +254,24 @@ impl Node {
         Type::new_int()
     }
 
-    // type-suffix = ("(" func-params)?
+    // type-suffix = ("(" func-params ")")?
+    // func-params = param ("," param)*
+    // param = typespec declarator
     fn type_suffix(tok_peek: &mut Peekable<Iter<Token>>, ty: Type) -> Type {
         if next_equal(tok_peek, "(") {
             skip(tok_peek, "(");
+
+            let mut params = Vec::new();
+            while !next_equal(tok_peek, ")") {
+                if params.len() > 0 {
+                    skip(tok_peek, ",");
+                }
+                let basety = Self::typespec(tok_peek);
+                let ty = Self::declarator(tok_peek, basety.clone());
+                params.push(ty);
+            }
             skip(tok_peek, ")");
-            return Type::new_func(ty.kind);
+            return Type::new_func(ty.kind, params);
         }
         ty
     }
@@ -605,6 +633,7 @@ impl Node {
 
 pub struct Function {
     pub name: String,
+    pub params: Vec<Var>,
     pub body: Node,
     #[allow(dead_code)]
     locals: Vec<Var>, // local variables
@@ -612,12 +641,13 @@ pub struct Function {
 }
 
 impl Function {
-    fn new(name: String, body: Node, locals: Vec<Var>) -> Self {
+    fn new(name: String, params: Vec<Var>, body: Node, locals: Vec<Var>) -> Self {
         let offset = 32 + 8 * (locals.len()); // 今後mapで変えるはず
         let stack_size = align_to(offset, 16);
 
         Self {
             name,
+            params,
             body,
             locals,
             stack_size,
