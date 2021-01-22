@@ -18,8 +18,8 @@
 use crate::tokenize::{consume, next_equal, skip, Token, TokenKind};
 use crate::types::{Type, TypeKind};
 use crate::util::{align_to, error, error_tok};
-use std::iter::Peekable;
 use std::slice::Iter;
+use std::{iter::Peekable, rc::Rc, unimplemented};
 //
 // Parser
 //
@@ -93,8 +93,8 @@ impl Var {
     }
 
     // 変数間のoffsetを計算するUtil関数 将来的に消す
-    fn calc_offset<T>(locals: &Vec<T>) -> usize {
-        32 + (locals.len() + 1) * 8
+    fn calc_offset(locals: &Vec<Var>) -> usize {
+        32 + locals.iter().fold(0, |acc, var| acc + var.ty.size)
     }
 }
 
@@ -112,8 +112,14 @@ impl Node {
     pub fn get_type(&self) -> Type {
         match &self.kind {
             NodeKind::Unary(op, child) => match op {
-                UnaryOp::Addr => Type::pointer_to(child.get_type(), String::new()),
-                UnaryOp::Deref => child.get_type(),
+                UnaryOp::Addr => match child.get_type().kind {
+                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base, "arr".to_string()),
+                    _ => Type::pointer_to(Rc::new(child.get_type()), String::new()),
+                },
+                UnaryOp::Deref => match child.get_type().kind {
+                    TypeKind::Arr { base, .. } => Type::pointer_to(base, "arr".to_string()),
+                    _ => child.get_type(),
+                },
                 _ => unreachable!(),
             },
             NodeKind::Bin { op: binop, lhs, .. } => match binop {
@@ -142,6 +148,7 @@ impl Node {
 
     pub fn new_add(lhs: Self, rhs: Self) -> Self {
         match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
+            // TODO ここのmagick number 8を消す
             // pointer + num
             (true, false) => Self::new_bin(
                 BinOp::Sub,
@@ -254,24 +261,38 @@ impl Node {
         Type::new_int()
     }
 
-    // type-suffix = ("(" func-params ")")?
-    // func-params = param ("," param)*
+    // func-params = (param ("," param)*)? ")"
     // param = typespec declarator
+    fn func_params(tok_peek: &mut Peekable<Iter<Token>>, ty: Type) -> Type {
+        let mut params = Vec::new();
+        while !next_equal(tok_peek, ")") {
+            if params.len() > 0 {
+                skip(tok_peek, ",");
+            }
+            let basety = Self::typespec(tok_peek);
+            let ty = Self::declarator(tok_peek, basety.clone());
+            params.push(ty);
+        }
+        skip(tok_peek, ")");
+        return Type::new_func(ty.kind, params);
+    }
+
+    // type-suffix = "(" func-params
+    //             | "[" num "]"
+    //             | sigma
     fn type_suffix(tok_peek: &mut Peekable<Iter<Token>>, ty: Type) -> Type {
         if next_equal(tok_peek, "(") {
             skip(tok_peek, "(");
-
-            let mut params = Vec::new();
-            while !next_equal(tok_peek, ")") {
-                if params.len() > 0 {
-                    skip(tok_peek, ",");
-                }
-                let basety = Self::typespec(tok_peek);
-                let ty = Self::declarator(tok_peek, basety.clone());
-                params.push(ty);
+            return Self::func_params(tok_peek, ty);
+        }
+        if next_equal(tok_peek, "[") {
+            skip(tok_peek, "[");
+            if let Some(size) = tok_peek.next().and_then(|tok| tok.get_number()) {
+                skip(tok_peek, "]");
+                return Type::array_of(ty, size as usize);
+            } else {
+                unimplemented!("Array length is not specified.");
             }
-            skip(tok_peek, ")");
-            return Type::new_func(ty.kind, params);
         }
         ty
     }
@@ -280,7 +301,7 @@ impl Node {
     pub fn declarator(tok_peek: &mut Peekable<Iter<Token>>, mut ty: Type) -> Type {
         // FIXME なんか凄く汚い
         while consume(tok_peek, "*") {
-            ty = Type::pointer_to(ty, String::new());
+            ty = Type::pointer_to(Rc::new(ty), String::new());
         }
         let tok = tok_peek.next().unwrap();
         if !matches!(tok.kind, TokenKind::Ident(_)) {
@@ -642,7 +663,7 @@ pub struct Function {
 
 impl Function {
     fn new(name: String, params: Vec<Var>, body: Node, locals: Vec<Var>) -> Self {
-        let offset = 32 + 8 * (locals.len()); // 今後mapで変えるはず
+        let offset = 32 + locals.iter().fold(0, |acc, var| acc + var.ty.size);
         let stack_size = align_to(offset, 16);
 
         Self {

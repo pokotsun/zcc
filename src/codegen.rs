@@ -1,4 +1,7 @@
+use std::unimplemented;
+
 use crate::parser::*;
+use crate::types::{Type, TypeKind};
 use crate::util::error;
 //
 // Code Generator
@@ -53,7 +56,16 @@ fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
     }
 }
 
-fn load(top: usize) {
+fn load(ty: Type, top: usize) {
+    if let TypeKind::Arr { .. } = ty.kind {
+        // If it is an array, do nothing because in general we can't load
+        // an entire array to a register. As a result, the result of an
+        // evaluation of an array becomes not the array itself but the
+        // address of the array. In other words, this is where "array is
+        // automatically converted to a pointer to the first element of
+        // the array in C" occurs.
+        return;
+    }
     println!("  mov ({}), {}", reg(top - 1), reg(top - 1));
 }
 
@@ -73,6 +85,9 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
             lhs,
             rhs,
         } => {
+            if let TypeKind::Arr { .. } = node.get_type().kind {
+                unimplemented!("array will not be assigned.")
+            }
             top = gen_expr(&*rhs, top);
             top = gen_addr(&*lhs, top).unwrap();
             top = store(top);
@@ -116,13 +131,13 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
                 _ => error("Invalid BinOp, probably Assign"),
             }
         }
-        NodeKind::Var(_) => {
+        NodeKind::Var(..) => {
             top = gen_addr(&node, top).unwrap();
-            load(top);
+            load(node.get_type(), top);
         }
         NodeKind::Unary(UnaryOp::Deref, child) => {
             top = gen_expr(child, top);
-            load(top);
+            load(node.get_type(), top);
         }
         NodeKind::Unary(UnaryOp::Addr, child) => {
             top = gen_addr(child, top).unwrap();
@@ -136,6 +151,7 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
                 println!("  mov {}, {}", reg(top), arg_reg(nargs - i));
             }
 
+            // 何故reg11もpushする必要がある?
             println!("  push %r10");
             println!("  push %r11");
             println!("  mov $0, %rax");
