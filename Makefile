@@ -1,6 +1,6 @@
 all: zcc test clean
 
-zcc:
+zcc: clean
 	cargo build
 	cp ./target/debug/zcc ./zcc 
 
