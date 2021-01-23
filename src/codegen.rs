@@ -260,7 +260,7 @@ pub fn codegen(prog: Vec<Function>) {
         // Prologue %r12-15 are callee-saved registers.
         println!("  push %rbp");
         println!("  mov %rsp, %rbp"); // 現在のrspをrbpにセット
-        println!("  sub ${}, %rsp", func.stack_size); // 関数の
+        println!("  sub ${}, %rsp", func.stack_size); // 関数のスタックサイズ
         println!("  mov %r12, -8(%rbp)");
         println!("  mov %r13, -16(%rbp)");
         println!("  mov %r14, -24(%rbp)");

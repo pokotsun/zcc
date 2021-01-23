@@ -116,11 +116,13 @@ impl Node {
         match &self.kind {
             NodeKind::Unary(op, child) => match op {
                 UnaryOp::Addr => match child.get_type().kind.as_ref() {
-                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base.clone(), "arr".to_string()),
+                    TypeKind::Arr { base, length: _ } => {
+                        Type::pointer_to(base.clone(), "arr".to_string())
+                    }
                     _ => Type::pointer_to(Rc::new(child.get_type()), String::new()),
                 },
                 UnaryOp::Deref => match child.get_type().kind.as_ref() {
-                    TypeKind::Arr { base, .. } => Type::pointer_to(base.clone(), "arr".to_string()),
+                    TypeKind::Arr { base, .. } => (*base.as_ref()).clone(),
                     _ => child.get_type(),
                 },
                 _ => unreachable!(),
@@ -151,13 +153,18 @@ impl Node {
 
     pub fn new_add(lhs: Self, rhs: Self) -> Self {
         match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
-            // TODO ここのmagick number 8を消す
             // pointer + num
-            (true, false) => Node::new_bin(
-                BinOp::Add,
-                lhs,
-                Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(8)), rhs),
-            ),
+            (true, false) => {
+                let lhs_size = match lhs.get_type().kind.as_ref() {
+                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.size,
+                    _ => unimplemented!("undefined internal type on ptr add"),
+                };
+                Self::new_bin(
+                    BinOp::Add,
+                    lhs,
+                    Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(lhs_size as i64)), rhs),
+                )
+            }
             // num + pointer
             (false, true) => Self::new_add(rhs, lhs),
             // num + num
@@ -170,11 +177,17 @@ impl Node {
     pub fn new_sub(lhs: Self, rhs: Self) -> Self {
         match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
             // pointer - num
-            (true, false) => Node::new_bin(
-                BinOp::Sub,
-                lhs,
-                Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(8)), rhs),
-            ),
+            (true, false) => {
+                let lhs_size = match lhs.get_type().kind.as_ref() {
+                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.size,
+                    _ => unimplemented!("undefined internal type on ptr sub"),
+                };
+                Self::new_bin(
+                    BinOp::Sub,
+                    lhs,
+                    Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(lhs_size as i64)), rhs),
+                )
+            }
             // pointer - pointer, which returns how many elements are between the two.
             (true, true) => Node::new_bin(
                 BinOp::Div,
@@ -279,6 +292,7 @@ impl Node {
 
     // type-suffix = "(" func-params
     //             | "[" num "]"
+    //             | "[" num "]" type-suffix
     //             | sigma
     fn type_suffix(tok_peek: &mut Peekable<Iter<Token>>, ty: Type) -> Type {
         if next_equal(tok_peek, "(") {
@@ -289,6 +303,7 @@ impl Node {
             skip(tok_peek, "[");
             if let Some(size) = tok_peek.next().and_then(|tok| tok.get_number()) {
                 skip(tok_peek, "]");
+                let ty = Self::type_suffix(tok_peek, ty);
                 return Type::array_of(Rc::new(ty), size as usize);
             } else {
                 unimplemented!("Array length is not specified.");
@@ -358,7 +373,8 @@ impl Node {
         let tok = tok_peek.peek().unwrap();
         if tok.equal("return") {
             tok_peek.next();
-            let node = Self::new_unary(UnaryOp::Return, Self::expr(tok_peek, locals));
+            let ret_node = Self::expr(tok_peek, locals);
+            let node = Self::new_unary(UnaryOp::Return, ret_node);
             skip(tok_peek, ";");
             return node;
         }
@@ -669,7 +685,7 @@ impl Function {
     fn new(name: String, params: VecDeque<Rc<Var>>, body: Node, locals: VecDeque<Rc<Var>>) -> Self {
         let mut offset = 32;
         for local in locals.iter() {
-            offset += 8;
+            offset += local.ty.size;
             local.offset.set(offset);
         }
         let stack_size = align_to(offset, 16);

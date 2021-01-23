@@ -4,7 +4,7 @@ use std::rc::Rc;
 #[derive(Clone, Debug)]
 pub enum TypeKind {
     Int,
-    Ptr(Rc<TypeKind>),
+    Ptr(Rc<Type>),
     Func {
         return_ty: Rc<TypeKind>,
         params: Vec<Type>,
@@ -44,33 +44,25 @@ impl Type {
     }
 
     pub fn pointer_to(base: Rc<Type>, name: String) -> Self {
-        Self::new(Rc::new(TypeKind::Ptr(base.kind.clone())), name, 8)
+        Self::new(Rc::new(TypeKind::Ptr(Rc::new((*base).clone()))), name, 8)
     }
 
     pub fn array_of(base: Rc<Type>, length: usize) -> Self {
         let size = base.size * length;
-        Self::new(
-            Rc::new(
-            TypeKind::Arr {
-                base,
-                length,
-            }),
-            String::new(),
-            size,
-        )
+        let ty = Self::new(Rc::new(TypeKind::Arr { base, length }), String::new(), size);
+        ty
     }
 
     pub fn is_ptr(self) -> bool {
         match self.kind.as_ref() {
-            TypeKind::Ptr(_) => true,
+            TypeKind::Ptr(_) | TypeKind::Arr { .. } => true,
             _ => false,
         }
     }
 
     pub fn new_func(kind: Rc<TypeKind>, params: Vec<Type>) -> Self {
         Self::new(
-            Rc::new(
-            TypeKind::Func {
+            Rc::new(TypeKind::Func {
                 return_ty: kind,
                 params,
             }),
