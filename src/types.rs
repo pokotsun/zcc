@@ -1,5 +1,6 @@
-use std::cell::RefCell;
 use std::rc::Rc;
+
+pub type FuncParam = (Type, String);
 
 #[derive(Clone, Debug)]
 pub enum TypeKind {
@@ -7,7 +8,7 @@ pub enum TypeKind {
     Ptr(Rc<Type>),
     Func {
         return_ty: Rc<TypeKind>,
-        params: Vec<Type>,
+        params: Vec<FuncParam>,
     },
     Arr {
         base: Rc<Type>,
@@ -18,7 +19,6 @@ pub enum TypeKind {
 #[derive(Clone, Debug)]
 pub struct Type {
     pub kind: TypeKind,
-    pub name: RefCell<String>,
     pub size: usize, // sizeof() value
                      // Pointer-to or array-of type. We intentionally use the same member
                      // to represent pointer/array duality in C.
@@ -31,20 +31,16 @@ pub struct Type {
 }
 
 impl Type {
-    fn new(kind: TypeKind, name: String, size: usize) -> Self {
-        Self {
-            kind,
-            name: RefCell::new(name),
-            size,
-        }
+    fn new(kind: TypeKind, size: usize) -> Self {
+        Self { kind, size }
     }
     pub fn new_int() -> Self {
         // FIXME ここのString::newは消せないのか?
-        Self::new(TypeKind::Int, String::new(), 8)
+        Self::new(TypeKind::Int, 8)
     }
 
-    pub fn pointer_to(base: Rc<Type>, name: String) -> Self {
-        Self::new(TypeKind::Ptr(Rc::new((*base).clone())), name, 8)
+    pub fn pointer_to(base: Rc<Type>) -> Self {
+        Self::new(TypeKind::Ptr(Rc::new((*base).clone())), 8)
     }
 
     pub fn array_of(base: Type, length: usize) -> Self {
@@ -54,7 +50,6 @@ impl Type {
                 base: Rc::new(base),
                 length,
             },
-            String::new(),
             size,
         );
         ty
@@ -67,13 +62,12 @@ impl Type {
         }
     }
 
-    pub fn new_func(kind: TypeKind, params: Vec<Type>) -> Self {
+    pub fn new_func(kind: TypeKind, params: Vec<FuncParam>) -> Self {
         Self::new(
             TypeKind::Func {
                 return_ty: Rc::new(kind),
                 params,
             },
-            String::new(),
             32,
         )
     }

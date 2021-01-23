@@ -16,7 +16,7 @@
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
 use crate::tokenize::{consume, next_equal, skip, Token, TokenKind};
-use crate::types::{Type, TypeKind};
+use crate::types::{FuncParam, Type, TypeKind};
 use crate::util::{align_to, error, error_tok};
 use std::slice::Iter;
 use std::{iter::Peekable, rc::Rc, unimplemented};
@@ -113,8 +113,8 @@ impl Node {
         match &self.kind {
             NodeKind::Unary(op, child) => match op {
                 UnaryOp::Addr => match child.get_type().kind {
-                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base, "arr".to_string()),
-                    _ => Type::pointer_to(Rc::new(child.get_type()), String::new()),
+                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base),
+                    _ => Type::pointer_to(Rc::new(child.get_type())),
                 },
                 UnaryOp::Deref => match child.get_type().kind {
                     TypeKind::Arr { base, .. } => (*base).clone(),
@@ -186,12 +186,11 @@ impl Node {
             // pointer - pointer, which returns how many elements are between the two.
             // 変数スタックはマイナス方向に伸びるため(ex. int x, y -> &x=-8, &y=-16),
             // &x-&yしてやると差分のポインタが得られる
-            (true, true) => {
-                Self::new_bin(
+            (true, true) => Self::new_bin(
                 BinOp::Div,
                 Self::new_bin(BinOp::Sub, rhs, lhs),
                 Self::new(NodeKind::Num(8)),
-            )},
+            ),
             // num - num
             (false, false) => Self::new_bin(BinOp::Sub, lhs, rhs),
             // num - pointer
@@ -240,22 +239,18 @@ impl Node {
     pub fn funcdef(tok_peek: &mut Peekable<Iter<Token>>) -> Function {
         let mut locals = Vec::new();
 
-        let mut ty = Node::typespec(tok_peek);
-        ty = Node::declarator(tok_peek, ty);
+        let ty = Node::typespec(tok_peek);
+        let (ty, func_name) = Node::declarator(tok_peek, ty);
 
-        let func_name = ty.name.into_inner();
         let mut var_params = Vec::new();
         if let TypeKind::Func {
             return_ty: _,
             params,
         } = ty.kind
         {
-            for param in params.iter() {
-                let var = Var::new_lvar(
-                    param.name.borrow().clone(),
-                    Var::calc_offset(&var_params),
-                    param.clone(),
-                );
+            for (ty, var_name) in params.iter() {
+                let var =
+                    Var::new_lvar(var_name.clone(), Var::calc_offset(&var_params), ty.clone());
                 var_params.push(var.clone());
                 locals.push(var.clone());
             }
@@ -282,8 +277,8 @@ impl Node {
                 skip(tok_peek, ",");
             }
             let basety = Self::typespec(tok_peek);
-            let ty = Self::declarator(tok_peek, basety.clone());
-            params.push(ty);
+            let (ty, var_name) = Self::declarator(tok_peek, basety.clone());
+            params.push((ty, var_name));
         }
         skip(tok_peek, ")");
         return Type::new_func(ty.kind, params);
@@ -312,18 +307,17 @@ impl Node {
     }
 
     // declarator = "*"* ident type-suffix
-    pub fn declarator(tok_peek: &mut Peekable<Iter<Token>>, mut ty: Type) -> Type {
+    pub fn declarator(tok_peek: &mut Peekable<Iter<Token>>, mut ty: Type) -> FuncParam {
         // FIXME なんか凄く汚い
         while consume(tok_peek, "*") {
-            ty = Type::pointer_to(Rc::new(ty), String::new());
+            ty = Type::pointer_to(Rc::new(ty));
         }
         let tok = tok_peek.next().unwrap();
         if !matches!(tok.kind, TokenKind::Ident(_)) {
             error_tok(tok, "invalid pointer dereference");
         }
         ty = Node::type_suffix(tok_peek, ty);
-        ty.name.replace(tok.word.clone());
-        ty
+        (ty, tok.word.clone())
     }
 
     // declaration = typespec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
@@ -339,12 +333,8 @@ impl Node {
             }
             is_already_declared = true;
 
-            let ty = Self::declarator(tok_peek, basety.clone());
-            let var = Var::new_lvar(
-                ty.name.borrow().clone(),
-                Var::calc_offset(locals),
-                ty.clone(),
-            );
+            let (ty, name) = Self::declarator(tok_peek, basety.clone());
+            let var = Var::new_lvar(name, Var::calc_offset(locals), ty.clone());
             locals.push(var.clone());
 
             if !next_equal(tok_peek, "=") {
