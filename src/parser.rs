@@ -83,7 +83,7 @@ pub enum NodeKind {
     }, // Function call
 }
 
-// Local Variable
+// Variable
 #[derive(Clone, Debug)]
 pub struct Var {
     pub name: String,
@@ -366,8 +366,7 @@ impl Node {
     //      | "{" compound-stmt
     //      | expr-stmt
     fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
-        let tok = tok_peek.peek().unwrap();
-        if tok.equal("return") {
+        if next_equal(tok_peek, "return") {
             tok_peek.next();
             let ret_node = Self::expr(tok_peek, locals);
             let node = Self::new_unary(UnaryOp::Return, ret_node);
@@ -375,7 +374,7 @@ impl Node {
             return node;
         }
 
-        if tok.equal("if") {
+        if next_equal(tok_peek, "if") {
             tok_peek.next();
             skip(tok_peek, "(");
             let cond = Self::expr(tok_peek, locals);
@@ -393,7 +392,7 @@ impl Node {
             return Node::new_if(cond, then, els);
         }
 
-        if tok.equal("for") {
+        if next_equal(tok_peek, "for") {
             tok_peek.next();
             skip(tok_peek, "(");
 
@@ -415,7 +414,7 @@ impl Node {
             return Self::new_for(cond, then, init, inc);
         }
 
-        if tok.equal("while") {
+        if next_equal(tok_peek, "while") {
             tok_peek.next();
             skip(tok_peek, "(");
             let cond = Self::expr(tok_peek, locals);
@@ -424,7 +423,7 @@ impl Node {
             return Self::new_while(cond, then);
         }
 
-        if tok.equal("{") {
+        if next_equal(tok_peek, "{") {
             tok_peek.next();
             return Self::compound_stmt(tok_peek, locals);
         }
