@@ -16,7 +16,7 @@
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
 use crate::tokenize::{consume, next_equal, skip, Token, TokenKind};
-use crate::types::{Type, TypeKind};
+use crate::types::{FuncParam, Type, TypeKind};
 use crate::util::{align_to, error, error_tok};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -116,10 +116,8 @@ impl Node {
         match &self.kind {
             NodeKind::Unary(op, child) => match op {
                 UnaryOp::Addr => match child.get_type().kind.as_ref() {
-                    TypeKind::Arr { base, length: _ } => {
-                        Type::pointer_to(base.clone(), "arr".to_string())
-                    }
-                    _ => Type::pointer_to(Rc::new(child.get_type()), String::new()),
+                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base.clone()),
+                    _ => Type::pointer_to(Rc::new(child.get_type())),
                 },
                 UnaryOp::Deref => match child.get_type().kind.as_ref() {
                     TypeKind::Arr { base, .. } => (*base.as_ref()).clone(),
@@ -242,23 +240,22 @@ impl Node {
     pub fn funcdef(tok_peek: &mut Peekable<Iter<Token>>) -> Function {
         let mut locals = VecDeque::new();
 
-        let mut ty = Node::typespec(tok_peek);
-        ty = Node::declarator(tok_peek, ty);
+        let ty = Node::typespec(tok_peek);
+        let (ty, func_name) = Node::declarator(tok_peek, ty);
 
-        let func_name = ty.name.into_inner();
         let mut var_params = VecDeque::new();
         if let TypeKind::Func {
             return_ty: _,
             params,
         } = ty.kind.as_ref()
         {
-            for param in params.iter() {
+            for (ty, var_name) in params.iter() {
                 // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
                 // 一旦無効な値0を入れる
-                let var = Var::new_lvar(param.name.borrow().clone(), 0, param.clone());
+                let var = Var::new_lvar(var_name.clone(), 0, ty.clone());
                 let var = Rc::new(var);
                 var_params.push_front(var.clone());
-                locals.push_front(var.clone());
+                locals.push_front(var);
             }
         }
 
@@ -283,8 +280,8 @@ impl Node {
                 skip(tok_peek, ",");
             }
             let basety = Self::typespec(tok_peek);
-            let ty = Self::declarator(tok_peek, basety.clone());
-            params.push(ty);
+            let (ty, var_name) = Self::declarator(tok_peek, basety.clone());
+            params.push((ty, var_name));
         }
         skip(tok_peek, ")");
         return Type::new_func(ty.kind, params);
@@ -313,18 +310,17 @@ impl Node {
     }
 
     // declarator = "*"* ident type-suffix
-    pub fn declarator(tok_peek: &mut Peekable<Iter<Token>>, mut ty: Type) -> Type {
+    pub fn declarator(tok_peek: &mut Peekable<Iter<Token>>, mut ty: Type) -> FuncParam {
         // FIXME なんか凄く汚い
         while consume(tok_peek, "*") {
-            ty = Type::pointer_to(Rc::new(ty), String::new());
+            ty = Type::pointer_to(Rc::new(ty));
         }
         let tok = tok_peek.next().unwrap();
         if !matches!(tok.kind, TokenKind::Ident(_)) {
             error_tok(tok, "invalid pointer dereference");
         }
         ty = Node::type_suffix(tok_peek, ty);
-        ty.name.replace(tok.word.clone());
-        ty
+        (ty, tok.word.clone())
     }
 
     // declaration = typespec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
@@ -340,10 +336,10 @@ impl Node {
             }
             is_already_declared = true;
 
-            let ty = Self::declarator(tok_peek, basety.clone());
+            let (ty, name) = Self::declarator(tok_peek, basety.clone());
             // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
             // 一旦無効な値0を入れる
-            let var = Var::new_lvar(ty.name.borrow().clone(), 0, ty.clone());
+            let var = Var::new_lvar(name, 0, ty.clone());
             let var = Rc::new(var);
             let rcvar = var.clone();
             locals.push_front(var);
