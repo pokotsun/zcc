@@ -643,13 +643,17 @@ impl Node {
         })
     }
 
-    // primary = "(" expr ")" | ident func-args? | num
-    fn primary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
+    // primary = "(" expr ")" | "sizeof" unary | ident func-args? | num
+    fn primary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Self {
         let tok = tok_peek.next().unwrap();
         if tok.equal("(") {
             let node = Self::expr(tok_peek, locals);
             skip(tok_peek, ")");
             return node;
+        }
+        if tok.equal("sizeof") {
+            let node = Self::unary(tok_peek, locals);
+            return Self::new(NodeKind::Num(node.get_type().size as i64));
         }
         match &tok.kind {
             TokenKind::Ident(name) => {

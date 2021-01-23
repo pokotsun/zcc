@@ -50,7 +50,7 @@ impl Token {
 }
 
 fn is_keyword(target: &str) -> bool {
-    let keywords = ["return", "if", "else", "for", "while", "int"];
+    let keywords = ["return", "if", "else", "for", "while", "int", "sizeof"];
     keywords.iter().any(|keyword| target == *keyword)
 }
 
