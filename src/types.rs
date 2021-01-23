@@ -35,7 +35,6 @@ impl Type {
         Self { kind, size }
     }
     pub fn new_int() -> Self {
-        // FIXME ここのString::newは消せないのか?
         Self::new(Rc::new(TypeKind::Int), 8)
     }
 
