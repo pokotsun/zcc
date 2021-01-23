@@ -20,9 +20,9 @@ fn main() {
     let chars = args[1].clone();
 
     let tokens = tokenize(chars);
-    let mut tok_iter = tokens.iter().peekable();
+    let tok_peek = tokens.iter().peekable();
 
-    let prog = Function::parse(&mut tok_iter);
+    let prog = Parser::parse(tok_peek);
 
     codegen(prog);
 }
