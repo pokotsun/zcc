@@ -566,7 +566,7 @@ impl Node {
     }
 
     // unary = ("+" | "-" | "*" | "&") unary
-    //       | primary
+    //       | postfix
     fn unary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
         let tok = tok_peek.peek().unwrap();
         if tok.equal("+") {
@@ -591,7 +591,21 @@ impl Node {
             return Self::new_unary(UnaryOp::Deref, Self::unary(tok_peek, locals));
         }
 
-        return Self::primary(tok_peek, locals);
+        return Self::postfix(tok_peek, locals);
+    }
+
+    // postfix = primary ("[" expr "]")
+    fn postfix(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Self {
+        let mut node = Self::primary(tok_peek, locals);
+
+        while next_equal(tok_peek, "[") {
+            skip(tok_peek, "[");
+            // x[idx] is *(x + idx)
+            let idx = Self::expr(tok_peek, locals);
+            skip(tok_peek, "]");
+            node = Self::new_unary(UnaryOp::Deref, Self::new_add(node, idx));
+        }
+        node
     }
 
     // funcall = ident "(" (assign (",", assign)*)? ")"
