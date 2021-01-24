@@ -66,6 +66,7 @@ pub struct Var {
     pub name: String,
     pub offset: Cell<usize>,
     pub ty: Type,
+    pub is_local: bool, // local or global REVIEW islocal要る?
 }
 
 impl Var {
@@ -74,6 +75,17 @@ impl Var {
             name,
             offset: Cell::new(offset),
             ty,
+            is_local: true,
+        }
+    }
+
+    pub fn new_gvar(name: String, ty: Type) -> Var {
+        // TODO offsetを無くすためにtraitで扱うようにする
+        Var {
+            name,
+            offset: Cell::new(0),
+            ty,
+            is_local: false,
         }
     }
 }
