@@ -1,4 +1,4 @@
-all: zcc test clean
+all: zcc test
 
 zcc: clean
 	cargo build
