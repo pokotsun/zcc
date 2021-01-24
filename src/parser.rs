@@ -48,34 +48,97 @@ impl Function {
     }
 }
 
+pub struct Program {
+    pub fns: Vec<Function>,
+    pub globals: Vec<Var>,
+}
+
+impl Program {
+    fn new(fns: Vec<Function>, globals: Vec<Var>) -> Self {
+        Self { fns, globals }
+    }
+}
+
 pub struct Parser<'a> {
     tok_peek: Peekable<Iter<'a, Token>>,
     locals: Vec<Var>,
+    globals: Vec<Var>,
 }
 
 impl<'a> Parser<'a> {
-    fn new(tok_peek: Peekable<Iter<'a, Token>>, locals: Vec<Var>) -> Self {
-        Self { tok_peek, locals }
+    fn new(tok_peek: Peekable<Iter<'a, Token>>) -> Self {
+        Self {
+            tok_peek,
+            locals: Vec::new(),
+            globals: Vec::new(),
+        }
     }
 
-    // program = stmt*
-    pub fn parse(tok_peek: Peekable<Iter<Token>>) -> Vec<Function> {
+    fn find_var(&self, name: String) -> Option<Var> {
+        // TODO なんか汚いので修正
+        if let Some(x) = self
+            .locals
+            .iter()
+            .find(|x| x.name == name)
+            .map(|var| var.clone())
+        {
+            Some(x)
+        } else {
+            self.globals
+                .iter()
+                .find(|x| x.name == name)
+                .map(|x| x.clone())
+        }
+    }
+
+    // program = (funcdef | global-var)*
+    pub fn parse(tok_peek: Peekable<Iter<Token>>) -> Program {
         // All local variable instances created during parsing are
         // accumulated to this list.
-        let mut parser = Parser::new(tok_peek, Vec::new());
+        let mut parser = Parser::new(tok_peek);
         let mut funcs = Vec::new();
         while let Some(_) = parser.tok_peek.peek() {
-            let func = parser.funcdef();
-            funcs.push(func);
+            let basety = parser.typespec();
+            let (mut ty, mut name) = parser.declarator(basety);
+
+            match ty.kind {
+                TypeKind::Func { .. } => {
+                    let func = parser.typed_funcdef(ty, name);
+                    funcs.push(func);
+                }
+                _ => {
+                    // Global variable
+                    loop {
+                        let var = Var::new_gvar(name, ty.clone());
+                        parser.globals.push(var);
+                        if consume(&mut parser.tok_peek, ";") {
+                            break;
+                        } else {
+                            skip(&mut parser.tok_peek, ",");
+                            let declare = parser.declarator(ty);
+                            ty = declare.0;
+                            name = declare.1;
+                        }
+                    }
+                }
+            }
         }
-        funcs
+        Program::new(funcs, parser.globals)
     }
 
     // funcdef = typespec declarator compound-stmt
-    pub fn funcdef(&mut self) -> Function {
+    #[allow(dead_code)]
+    fn funcdef(&mut self) -> Function {
         let ty = self.typespec();
         let (ty, func_name) = self.declarator(ty);
 
+        self.typed_funcdef(ty, func_name)
+    }
+
+    // 既に関数の返り値と関数名が得られた場合の関数の中身を取り出す
+    // 主にcompoud-stmtの処理を行う
+    // typed-funcdef = typespec declarator compound-stmt
+    fn typed_funcdef(&mut self, ty: Type, func_name: String) -> Function {
         let mut var_params = Vec::new();
         if let TypeKind::Func {
             return_ty: _,
@@ -97,7 +160,7 @@ impl<'a> Parser<'a> {
     }
 
     // typespec = "int"
-    pub fn typespec(&mut self) -> Type {
+    fn typespec(&mut self) -> Type {
         skip(&mut self.tok_peek, "int");
         Type::new_int()
     }
@@ -141,7 +204,7 @@ impl<'a> Parser<'a> {
     }
 
     // declarator = "*"* ident type-suffix
-    pub fn declarator(&mut self, mut ty: Type) -> FuncParam {
+    fn declarator(&mut self, mut ty: Type) -> FuncParam {
         // FIXME なんか凄く汚い
         while consume(&mut self.tok_peek, "*") {
             ty = Type::pointer_to(Rc::new(ty));
@@ -475,8 +538,8 @@ impl<'a> Parser<'a> {
                 }
 
                 // variable
-                let var = if let Some(x) = self.locals.iter().find(|x| x.name == *name) {
-                    x.clone()
+                let var = if let Some(x) = self.find_var(name.clone()) {
+                    x
                 } else {
                     error_tok(tok, "undefined variable");
                     // FIXME 綺麗にする

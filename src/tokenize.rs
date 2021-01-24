@@ -54,7 +54,7 @@ fn is_keyword(target: &str) -> bool {
     keywords.iter().any(|keyword| target == *keyword)
 }
 
-pub fn skip(tok_iter: &mut Peekable<Iter<Token>>, s: &str) {
+pub fn skip<'a>(tok_iter: &mut impl Iterator<Item = &'a Token>, s: &str) {
     let tok = tok_iter.next().unwrap();
     if !tok.equal(s) {
         error_tok(&tok, &format!("expected '{}', but got {}", s, tok.word));

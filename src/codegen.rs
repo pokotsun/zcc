@@ -46,7 +46,11 @@ pub fn arg_reg(idx: usize) -> &'static str {
 fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
     match &node.kind {
         NodeKind::Var(var) => {
-            println!("  lea -{}(%rbp), {}", var.offset, reg(top));
+            if var.is_local {
+                println!("  lea -{}(%rbp), {}", var.offset, reg(top));
+            } else {
+                println!("  mov ${}, {}", var.name, reg(top));
+            }
             Ok(top + 1)
         }
         NodeKind::Unary(UnaryOp::Deref, child) => {
@@ -251,10 +255,20 @@ fn gen_stmt(
     }
 }
 
-pub fn codegen(prog: Vec<Function>) {
+pub fn emit_data(prog: &Program) {
+    println!(".data");
+    for var in prog.globals.iter() {
+        println!("{}:", var.name);
+        println!("  .zero {}", var.ty.size);
+    }
+}
+
+fn emit_text(prog: &Program) {
+    println!(".text");
+
     let mut label_counter = LabelCounter::new();
 
-    for func in prog.iter() {
+    for func in prog.fns.iter() {
         println!(".globl {}", func.name);
         println!("{}:", func.name);
 
@@ -289,4 +303,9 @@ pub fn codegen(prog: Vec<Function>) {
         // retすることでそのスタック上の値を読み出しcallの次の命令に移動
         println!("  ret");
     }
+}
+
+pub fn codegen(prog: Program) {
+    emit_data(&prog);
+    emit_text(&prog);
 }

@@ -63,11 +63,27 @@ pub struct Var {
     pub name: String,
     pub offset: usize, // Offset from RBP
     pub ty: Type,
+    pub is_local: bool, // local or global REVIEW islocal要る?
 }
 
 impl Var {
     pub fn new_lvar(name: String, offset: usize, ty: Type) -> Var {
-        Var { name, offset, ty }
+        Var {
+            name,
+            offset,
+            ty,
+            is_local: true,
+        }
+    }
+
+    pub fn new_gvar(name: String, ty: Type) -> Var {
+        // TODO offsetを無くすためにtraitで扱うようにする
+        Var {
+            name,
+            offset: 0,
+            ty,
+            is_local: false,
+        }
     }
 
     // 変数間のoffsetを計算するUtil関数 将来的に消す
