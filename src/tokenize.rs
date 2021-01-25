@@ -50,8 +50,16 @@ impl Token {
 }
 
 fn is_keyword(target: &str) -> bool {
-    let keywords = ["return", "if", "else", "for", "while", "int", "sizeof"];
+    let keywords = [
+        "return", "if", "else", "for", "while", "char", "int", "sizeof",
+    ];
     keywords.iter().any(|keyword| target == *keyword)
+}
+
+pub fn is_typename(tok_peek: &mut Peekable<Iter<Token>>) -> bool {
+    // REVIEW: このtype情報はどこかにまとめられないか
+    let types = ["char", "int"];
+    types.iter().any(|s| next_equal(tok_peek, s))
 }
 
 pub fn skip<'a>(tok_iter: &mut impl Iterator<Item = &'a Token>, s: &str) {

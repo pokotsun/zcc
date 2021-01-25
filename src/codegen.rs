@@ -29,18 +29,24 @@ impl Iterator for LabelCounter {
 }
 
 const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
-const ARG_REGISTERS: [&str; 6] = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+const ARG_REGISTERS8: [&str; 6] = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
+const ARG_REGISTERS64: [&str; 6] = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
 
-pub fn reg(idx: usize) -> &'static str {
-    REGISTERS
-        .get(idx)
+fn reg_access(reg: [&'static str; 6], idx: usize) -> &'static str {
+    reg.get(idx)
         .expect(&format!("register out of range: {}", idx))
 }
 
-pub fn arg_reg(idx: usize) -> &'static str {
-    ARG_REGISTERS
-        .get(idx)
-        .expect(&format!("register out of range: {}", idx))
+fn reg(idx: usize) -> &'static str {
+    reg_access(REGISTERS, idx)
+}
+
+fn arg_reg8(idx: usize) -> &'static str {
+    reg_access(ARG_REGISTERS8, idx)
+}
+
+fn arg_reg64(idx: usize) -> &'static str {
+    reg_access(ARG_REGISTERS64, idx)
 }
 
 fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
@@ -62,20 +68,37 @@ fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
 }
 
 fn load(ty: Type, top: usize) {
-    if let TypeKind::Arr { .. } = ty.kind.as_ref() {
-        // If it is an array, do nothing because in general we can't load
-        // an entire array to a register. As a result, the result of an
-        // evaluation of an array becomes not the array itself but the
-        // address of the array. In other words, this is where "array is
-        // automatically converted to a pointer to the first element of
-        // the array in C" occurs.
-        return;
+    let r = reg(top - 1);
+    match ty.kind.as_ref() {
+        TypeKind::Arr { .. } => {
+            // If it is an array, do nothing because in general we can't load
+            // an entire array to a register. As a result, the result of an
+            // evaluation of an array becomes not the array itself but the
+            // address of the array. In other words, this is where "array is
+            // automatically converted to a pointer to the first element of
+            // the array in C" occurs.
+            return;
+        }
+        TypeKind::Char => {
+            println!("  movsbq ({}), {}", r, r);
+        }
+        _ => {
+            println!("  mov ({}), {}", r, r);
+        }
     }
-    println!("  mov ({}), {}", reg(top - 1), reg(top - 1));
 }
 
-fn store(top: usize) -> usize {
-    println!("  mov {}, ({})", reg(top - 2), reg(top - 1));
+fn store(ty: Type, top: usize) -> usize {
+    let rd = reg(top - 1);
+    let rs = reg(top - 2);
+    match ty.kind.as_ref() {
+        TypeKind::Char => {
+            println!("  mov {}b, ({})", rs, rd);
+        }
+        _ => {
+            println!("  mov {}, ({})", rs, rd);
+        }
+    }
     top - 1
 }
 
@@ -95,7 +118,7 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
             }
             top = gen_expr(&*rhs, top);
             top = gen_addr(&*lhs, top).unwrap();
-            top = store(top);
+            top = store(node.get_type(), top);
         }
         NodeKind::Bin { op, lhs, rhs } => {
             top = gen_expr(&*rhs, gen_expr(&*lhs, top));
@@ -153,7 +176,7 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
 
             for i in 1..=nargs {
                 top -= 1;
-                println!("  mov {}, {}", reg(top), arg_reg(nargs - i));
+                println!("  mov {}, {}", reg(top), arg_reg64(nargs - i));
             }
 
             // 何故reg11もpushする必要がある?
@@ -255,7 +278,7 @@ fn gen_stmt(
     }
 }
 
-pub fn emit_data(prog: &Program) {
+fn emit_data(prog: &Program) {
     println!(".data");
     for var in prog.globals.iter() {
         println!("{}:", var.name);
@@ -284,11 +307,22 @@ fn emit_text(prog: &Program) {
         // Save arguments to the stack
         let nargs = func.params.len();
         for (i, param) in func.params.iter().enumerate() {
-            println!(
-                "  mov {}, -{}(%rbp)",
-                arg_reg(nargs - i - 1),
-                param.offset.get()
-            )
+            match param.ty.kind.as_ref() {
+                TypeKind::Char => {
+                    println!(
+                        "  mov {}, -{}(%rbp)",
+                        arg_reg8(nargs - i - 1),
+                        param.offset.get()
+                    );
+                }
+                _ => {
+                    println!(
+                        "  mov {}, -{}(%rbp)",
+                        arg_reg64(nargs - i - 1),
+                        param.offset.get()
+                    );
+                }
+            }
         }
 
         // Emit code

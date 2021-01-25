@@ -4,6 +4,7 @@ pub type FuncParam = (Type, String);
 
 #[derive(Clone, Debug)]
 pub enum TypeKind {
+    Char,
     Int,
     Ptr(Rc<Type>),
     Func {
@@ -34,6 +35,11 @@ impl Type {
     fn new(kind: Rc<TypeKind>, size: usize) -> Self {
         Self { kind, size }
     }
+
+    pub fn new_char() -> Self {
+        Self::new(Rc::new(TypeKind::Char), 1)
+    }
+
     pub fn new_int() -> Self {
         Self::new(Rc::new(TypeKind::Int), 8)
     }
