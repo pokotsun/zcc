@@ -4,6 +4,7 @@ pub type FuncParam = (Type, String);
 
 #[derive(Clone, Debug)]
 pub enum TypeKind {
+    Char,
     Int,
     Ptr(Rc<Type>),
     Func {
@@ -34,6 +35,11 @@ impl Type {
     fn new(kind: TypeKind, size: usize) -> Self {
         Self { kind, size }
     }
+
+    pub fn new_char() -> Self {
+        Self::new(TypeKind::Char, 1)
+    }
+
     pub fn new_int() -> Self {
         // FIXME ここのString::newは消せないのか?
         Self::new(TypeKind::Int, 8)
@@ -55,13 +61,6 @@ impl Type {
         ty
     }
 
-    pub fn is_ptr(self) -> bool {
-        match self.kind {
-            TypeKind::Ptr(_) | TypeKind::Arr { .. } => true,
-            _ => false,
-        }
-    }
-
     pub fn new_func(kind: TypeKind, params: Vec<FuncParam>) -> Self {
         Self::new(
             TypeKind::Func {
@@ -70,5 +69,12 @@ impl Type {
             },
             32,
         )
+    }
+
+    pub fn is_ptr(self) -> bool {
+        match self.kind {
+            TypeKind::Ptr(_) | TypeKind::Arr { .. } => true,
+            _ => false,
+        }
     }
 }

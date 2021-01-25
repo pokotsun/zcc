@@ -16,7 +16,7 @@
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
 use crate::node::{BinOp, Node, NodeKind, UnaryOp, Var};
-use crate::tokenize::{consume, next_equal, skip, Token, TokenKind};
+use crate::tokenize::{consume, is_typename, next_equal, skip, Token, TokenKind};
 use crate::types::{FuncParam, Type, TypeKind};
 use crate::util::{align_to, error, error_tok};
 use std::slice::Iter;
@@ -159,8 +159,12 @@ impl<'a> Parser<'a> {
         Function::new(func_name, var_params, body, self.locals.clone())
     }
 
-    // typespec = "int"
+    // typespec = "char" | "int"
     fn typespec(&mut self) -> Type {
+        if next_equal(&mut self.tok_peek, "char") {
+            skip(&mut self.tok_peek, "char");
+            return Type::new_char();
+        }
         skip(&mut self.tok_peek, "int");
         Type::new_int()
     }
@@ -319,7 +323,7 @@ impl<'a> Parser<'a> {
         let mut nodes = Vec::new();
 
         while !next_equal(&mut self.tok_peek, "}") {
-            let node = if next_equal(&mut self.tok_peek, "int") {
+            let node = if is_typename(&mut self.tok_peek) {
                 Self::declaration(self)
             } else {
                 Self::stmt(self)
