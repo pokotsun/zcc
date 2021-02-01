@@ -15,16 +15,17 @@
 // Most parsing functions don't change the global state of the parser.
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
-use crate::node::{BinOp, Node, NodeKind, UnaryOp, Var};
 use crate::tokenize::{consume, is_typename, next_equal, skip, Token, TokenKind};
 use crate::types::{FuncParam, Type, TypeKind};
 use crate::util::{align_to, error, error_tok};
+use crate::{
+    node::{BinOp, Node, NodeKind, UnaryOp, Var, VarType},
+    util::LabelCounter,
+};
 use std::collections::VecDeque;
 use std::slice::Iter;
 use std::{iter::Peekable, rc::Rc, unimplemented};
-//
-// Parser
-//
+
 pub struct Function {
     pub name: String,
     pub params: VecDeque<Rc<Var>>,
@@ -39,7 +40,9 @@ impl Function {
         let mut offset = 32;
         for local in locals.iter() {
             offset += local.ty.size;
-            local.offset.set(offset);
+            if let VarType::Local(var_offset) = local.var_ty.clone() {
+                var_offset.set(offset);
+            }
         }
         let stack_size = align_to(offset, 16);
 
@@ -68,6 +71,7 @@ pub struct Parser<'a> {
     tok_peek: Peekable<Iter<'a, Token>>,
     locals: VecDeque<Rc<Var>>,
     globals: VecDeque<Rc<Var>>,
+    data_idx: LabelCounter,
 }
 
 impl<'a> Parser<'a> {
@@ -76,7 +80,13 @@ impl<'a> Parser<'a> {
             tok_peek,
             locals: VecDeque::new(),
             globals: VecDeque::new(),
+            data_idx: LabelCounter::new(),
         }
+    }
+
+    fn new_unique_name(&mut self) -> String {
+        let idx = self.data_idx.next().unwrap();
+        format!(".L.data.{}", idx)
     }
 
     fn find_var(&self, name: String) -> Option<Rc<Var>> {
@@ -114,7 +124,7 @@ impl<'a> Parser<'a> {
                 _ => {
                     // Global variable
                     loop {
-                        let var = Var::new_gvar(name, ty.clone());
+                        let var = Var::new_gvar(name, ty.clone(), None);
                         let var = Rc::new(var);
                         parser.globals.push_front(var);
                         if consume(&mut parser.tok_peek, ";") {
@@ -539,7 +549,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // primary = "(" expr ")" | "sizeof" unary | ident func-args? | num
+    // primary = "(" expr ")" | "sizeof" unary | ident func-args? | str | num
     fn primary(&mut self) -> Node {
         let tok = self.tok_peek.next().unwrap();
         if tok.equal("(") {
@@ -567,6 +577,14 @@ impl<'a> Parser<'a> {
                     self.locals[0].clone()
                 };
                 Node::new_var_node(var)
+            }
+            TokenKind::Str => {
+                let name = self.new_unique_name();
+                let gvar = Var::new_string_literal(name, tok.word.clone());
+                let gvar = Rc::new(gvar);
+                let rgvar = gvar.clone();
+                self.globals.push_front(gvar);
+                Node::new_var_node(rgvar)
             }
             _ => {
                 // TODO ここの処理をもう少し綺麗にする

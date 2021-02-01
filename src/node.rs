@@ -62,31 +62,38 @@ pub enum NodeKind {
 
 // Variable
 #[derive(Clone, Debug)]
+pub enum VarType {
+    Local(Rc<Cell<usize>>), // Offset from RBP
+    Global(Option<String>), // initdata
+}
+
+#[derive(Clone, Debug)]
 pub struct Var {
     pub name: String,
-    pub offset: Cell<usize>,
     pub ty: Type,
-    pub is_local: bool, // local or global REVIEW islocal要る?
+    pub var_ty: VarType,
 }
 
 impl Var {
     pub fn new_lvar(name: String, offset: usize, ty: Type) -> Var {
         Var {
             name,
-            offset: Cell::new(offset),
             ty,
-            is_local: true,
+            var_ty: VarType::Local(Rc::new(Cell::new(offset))),
         }
     }
 
-    pub fn new_gvar(name: String, ty: Type) -> Var {
-        // TODO offsetを無くすためにtraitで扱うようにする
+    pub fn new_gvar(name: String, ty: Type, init_data: Option<String>) -> Var {
         Var {
             name,
-            offset: Cell::new(0),
             ty,
-            is_local: false,
+            var_ty: VarType::Global(init_data),
         }
+    }
+
+    pub fn new_string_literal(name: String, init_data: String) -> Var {
+        let ty = Type::new_string(init_data.len());
+        Var::new_gvar(name, ty, Some(init_data))
     }
 }
 

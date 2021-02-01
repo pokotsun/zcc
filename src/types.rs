@@ -54,6 +54,10 @@ impl Type {
         ty
     }
 
+    pub fn new_string(length: usize) -> Self {
+        Self::array_of(Rc::new(Self::new_char()), length)
+    }
+
     pub fn is_ptr(self) -> bool {
         match self.kind.as_ref() {
             TypeKind::Ptr(_) | TypeKind::Arr { .. } => true,
