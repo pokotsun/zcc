@@ -85,6 +85,29 @@ pub fn next_equal(tok_peek: &mut Peekable<Iter<Token>>, s: &str) -> bool {
     tok_peek.peek().filter(|tok| tok.equal(s)).is_some()
 }
 
+fn read_escaped_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> String {
+    // rust seem not to support ancient unicode escape literal.
+    // so this code is very dirty.
+    // please visit https://github.com/rust-lang/rust/issues/16744
+    let ch = chars_peek.next().map(|(_, ch)| ch).unwrap();
+    match ch {
+        'a' | 'b' | 't' | 'n' | 'v' | 'f' | 'r' | 'e' => {
+            match ch {
+                'a' => "\u{07}",
+                'b' => "\u{08}",
+                't' => "\u{09}",
+                'n' => "\u{0A}",
+                'v' => "\u{0B}",
+                'f' => "\u{0C}",
+                'r' => "\u{0D}", // r
+                _ => "\u{1B}",   // e
+            }
+            .to_string()
+        }
+        _ => ch.to_string(),
+    }
+}
+
 // TODO: ここにこれまでのtokenizeの全ての負債が詰まっている, 直すべし
 fn read_string_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> String {
     let mut str = String::new();
@@ -92,6 +115,9 @@ fn read_string_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> String {
         if let Some((_, ch)) = chars_peek.next() {
             match ch {
                 '\"' => break,
+                '\\' => {
+                    str += &read_escaped_literal(chars_peek);
+                }
                 _ => {
                     str += &ch.to_string();
                 }
@@ -279,6 +305,15 @@ mod test {
         let tokenized = tokenize(code);
         assert_eq!(tokenized.len(), 4);
         assert_eq!(tokenized[1].word, "abcdefg\0");
+        assert_eq!(tokenized[2].word, ";");
+    }
+
+    #[test]
+    fn tokenize_escaped_literal() {
+        let code = "{ \"\n\\e\\r\"; }".to_string();
+        let tokenized = tokenize(code);
+        assert_eq!(tokenized.len(), 4);
+        assert_eq!(tokenized[1].word, "\u{0A}\u{1B}\u{0D}\u{0}");
         assert_eq!(tokenized[2].word, ";");
     }
 }
