@@ -15,15 +15,16 @@
 // Most parsing functions don't change the global state of the parser.
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
-use crate::node::{BinOp, Node, NodeKind, UnaryOp, Var};
 use crate::tokenize::{consume, is_typename, next_equal, skip, Token, TokenKind};
 use crate::types::{FuncParam, Type, TypeKind};
 use crate::util::{align_to, error, error_tok};
+use crate::{
+    node::{BinOp, Node, NodeKind, UnaryOp, Var},
+    util::LabelCounter,
+};
 use std::slice::Iter;
 use std::{iter::Peekable, rc::Rc, unimplemented};
-//
-// Parser
-//
+
 pub struct Function {
     pub name: String,
     pub params: Vec<Var>,
@@ -63,6 +64,7 @@ pub struct Parser<'a> {
     tok_peek: Peekable<Iter<'a, Token>>,
     locals: Vec<Var>,
     globals: Vec<Var>,
+    data_idx: LabelCounter,
 }
 
 impl<'a> Parser<'a> {
@@ -71,7 +73,13 @@ impl<'a> Parser<'a> {
             tok_peek,
             locals: Vec::new(),
             globals: Vec::new(),
+            data_idx: LabelCounter::new(),
         }
+    }
+
+    fn new_unique_name(&mut self) -> String {
+        let idx = self.data_idx.next().unwrap();
+        format!(".L.data.{}", idx)
     }
 
     fn find_var(&self, name: String) -> Option<Var> {
@@ -109,7 +117,7 @@ impl<'a> Parser<'a> {
                 _ => {
                     // Global variable
                     loop {
-                        let var = Var::new_gvar(name, ty.clone());
+                        let var = Var::new_gvar(name, ty.clone(), None);
                         parser.globals.push(var);
                         if consume(&mut parser.tok_peek, ";") {
                             break;
@@ -522,7 +530,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // primary = "(" expr ")" | "sizeof" unary | ident func-args? | num
+    // primary = "(" expr ")" | "sizeof" unary | ident func-args? | str | num
     fn primary(&mut self) -> Node {
         let tok = self.tok_peek.next().unwrap();
         if tok.equal("(") {
@@ -550,6 +558,12 @@ impl<'a> Parser<'a> {
                     self.locals[0].clone()
                 };
                 Node::new_var_node(var)
+            }
+            TokenKind::Str => {
+                let name = self.new_unique_name();
+                let gvar = Var::new_string_literal(name, tok.word.clone());
+                self.globals.push(gvar.clone());
+                Node::new_var_node(gvar)
             }
             _ => {
                 // TODO ここの処理をもう少し綺麗にする

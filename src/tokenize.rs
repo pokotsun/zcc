@@ -1,8 +1,11 @@
 use crate::util::*;
-use itertools::multipeek;
-use std::iter::{Iterator, Peekable};
+use itertools::{multipeek, MultiPeek};
 use std::rc::Rc;
 use std::slice::Iter;
+use std::{
+    iter::{Enumerate, Iterator, Peekable},
+    str::Chars,
+};
 
 // FIXME IdentのStringとwordは役割が被っていないか?
 #[derive(Debug)]
@@ -10,6 +13,7 @@ pub enum TokenKind {
     Reserved,
     Ident(String), // Identifiers
     Num(i64),
+    Str, // String literal
 }
 
 #[derive(Debug)]
@@ -79,6 +83,24 @@ pub fn consume<'a>(tok_peek: &mut Peekable<Iter<Token>>, s: &str) -> bool {
 
 pub fn next_equal(tok_peek: &mut Peekable<Iter<Token>>, s: &str) -> bool {
     tok_peek.peek().filter(|tok| tok.equal(s)).is_some()
+}
+
+// TODO: ここにこれまでのtokenizeの全ての負債が詰まっている, 直すべし
+fn read_string_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> String {
+    let mut str = String::new();
+    loop {
+        if let Some((_, ch)) = chars_peek.next() {
+            match ch {
+                '\"' => break,
+                _ => {
+                    str += &ch.to_string();
+                }
+            }
+        } else {
+            unimplemented!("Missing end of string literal.");
+        }
+    }
+    str + "\0"
 }
 
 pub fn tokenize(line: String) -> Vec<Token> {
@@ -172,6 +194,13 @@ pub fn tokenize(line: String) -> Vec<Token> {
                 let token = Token::new(TokenKind::Num(num), i, line.clone(), num.to_string());
                 tokens.push(token);
             }
+            // String literal
+            '"' => {
+                chars_peek.next();
+                let str = read_string_literal(&mut chars_peek);
+                let token = Token::new(TokenKind::Str, i, line.clone(), str);
+                tokens.push(token);
+            }
             // Punctuator
             '+' | '-' | '*' | '/' | '(' | ')' | ',' | ';' | '{' | '}' | '[' | ']' | '&' => {
                 chars_peek.next();
@@ -242,5 +271,14 @@ mod test {
         assert_eq!(tokenized[1].word, "if");
         assert_eq!(tokenized[9].word, "return");
         assert_eq!(tokenized[10].word, "3");
+    }
+
+    #[test]
+    fn tokenize_str() {
+        let code = "{ \"abcdefg\"; }".to_string();
+        let tokenized = tokenize(code);
+        assert_eq!(tokenized.len(), 4);
+        assert_eq!(tokenized[1].word, "abcdefg\0");
+        assert_eq!(tokenized[2].word, ";");
     }
 }

@@ -1,32 +1,15 @@
 use std::unimplemented;
 
-use crate::node::{BinOp, Node, NodeKind, UnaryOp};
 use crate::parser::*;
 use crate::types::{Type, TypeKind};
 use crate::util::error;
+use crate::{
+    node::{BinOp, Node, NodeKind, UnaryOp, VarType},
+    util::LabelCounter,
+};
 //
 // Code Generator
 //
-
-struct LabelCounter {
-    idx: usize,
-}
-
-impl LabelCounter {
-    fn new() -> Self {
-        LabelCounter { idx: 0 }
-    }
-}
-
-impl Iterator for LabelCounter {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<usize> {
-        let x = self.idx;
-        self.idx += 1;
-        Some(x)
-    }
-}
 
 const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
 const ARG_REGISTERS8: [&str; 6] = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
@@ -52,10 +35,18 @@ fn arg_reg64(idx: usize) -> &'static str {
 fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
     match &node.kind {
         NodeKind::Var(var) => {
-            if var.is_local {
-                println!("  lea -{}(%rbp), {}", var.offset, reg(top));
-            } else {
-                println!("  mov ${}, {}", var.name, reg(top));
+            match var.var_ty {
+                VarType::Local(offset) => {
+                    println!("  lea -{}(%rbp), {}", offset, reg(top));
+                }
+                VarType::Global(_) => {
+                    println!("  mov ${}, {}", var.name, reg(top));
+                    // このコンパイラの場合, マイナス方向にデータが生えるため
+                    // 最初のデータまでのoffsetをとってやる
+                    if let TypeKind::Arr { .. } = var.ty.kind {
+                        println!("  add ${}, {}", var.ty.size - 1, reg(top));
+                    }
+                }
             }
             Ok(top + 1)
         }
@@ -282,7 +273,14 @@ fn emit_data(prog: &Program) {
     println!(".data");
     for var in prog.globals.iter() {
         println!("{}:", var.name);
-        println!("  .zero {}", var.ty.size);
+        if let VarType::Global(Some(init_data)) = var.var_ty.clone() {
+            for ch in init_data.chars().rev() {
+                let chnum = ch as u32;
+                println!("  .byte {}", chnum);
+            }
+        } else {
+            println!("  .zero {}", var.ty.size);
+        }
     }
 }
 
@@ -306,12 +304,14 @@ fn emit_text(prog: &Program) {
 
         // Save arguments to the stack
         for (i, param) in func.params.iter().enumerate() {
-            match param.ty.kind {
-                TypeKind::Char => {
-                    println!("  mov {}, -{}(%rbp)", arg_reg8(i), param.offset);
-                }
-                _ => {
-                    println!("  mov {}, -{}(%rbp)", arg_reg64(i), param.offset)
+            if let VarType::Local(offset) = param.var_ty {
+                match param.ty.kind {
+                    TypeKind::Char => {
+                        println!("  mov {}, -{}(%rbp)", arg_reg8(i), offset);
+                    }
+                    _ => {
+                        println!("  mov {}, -{}(%rbp)", arg_reg64(i), offset);
+                    }
                 }
             }
         }

@@ -13,6 +13,25 @@ macro_rules! matches(
         }
     )
 );
+pub struct LabelCounter {
+    idx: usize,
+}
+
+impl LabelCounter {
+    pub fn new() -> Self {
+        LabelCounter { idx: 0 }
+    }
+}
+
+impl Iterator for LabelCounter {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        let x = self.idx;
+        self.idx += 1;
+        Some(x)
+    }
+}
 
 pub fn error(msg: &str) {
     eprintln!("{}", msg);

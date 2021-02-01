@@ -61,6 +61,10 @@ impl Type {
         ty
     }
 
+    pub fn new_string(length: usize) -> Self {
+        Self::array_of(Self::new_char(), length)
+    }
+
     pub fn new_func(kind: TypeKind, params: Vec<FuncParam>) -> Self {
         Self::new(
             TypeKind::Func {
