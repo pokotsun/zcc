@@ -13,7 +13,7 @@ pub enum TokenKind {
     Reserved,
     Ident(String), // Identifiers
     Num(i64),
-    Str, // String literal
+    Str(Vec<String>), // String literal
 }
 
 #[derive(Debug)]
@@ -86,47 +86,89 @@ pub fn next_equal(tok_peek: &mut Peekable<Iter<Token>>, s: &str) -> bool {
 }
 
 fn read_escaped_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> String {
-    // rust seem not to support ancient unicode escape literal.
-    // so this code is very dirty.
-    // please visit https://github.com/rust-lang/rust/issues/16744
     let ch = chars_peek.next().map(|(_, ch)| ch).unwrap();
     match ch {
+        '0'..='7' => {
+            // Read an octal number
+            let mut num = ch.to_digit(8).unwrap();
+            for _ in 0..2 {
+                // 3桁まで表せるため
+                if let Some((_, ch)) = chars_peek.peek().cloned() {
+                    match ch {
+                        '0'..='7' => {
+                            chars_peek.next();
+                            num <<= 3;
+                            num += ch.to_digit(8).unwrap();
+                        }
+                        _ => break,
+                    }
+                }
+            }
+            num.to_string()
+        }
+        'x' => {
+            // Read a hexadecimal number.
+            if chars_peek
+                .peek()
+                .filter(|(_, ch)| ch.is_ascii_hexdigit())
+                .is_some()
+            {
+                chars_peek.reset_peek();
+                let mut num = 0;
+                while let Some((_, ch)) = chars_peek
+                    .peek()
+                    .cloned()
+                    .filter(|(_, ch)| ch.is_ascii_hexdigit())
+                {
+                    chars_peek.next();
+                    num <<= 4;
+                    num += ch.to_digit(16).unwrap();
+                }
+                num.to_string()
+            } else {
+                unimplemented!("invalid hex escape sequence");
+            }
+        }
         'a' | 'b' | 't' | 'n' | 'v' | 'f' | 'r' | 'e' => {
+            // rust seem not to support ancient unicode escape literal.
+            // so this code is very dirty.
+            // please visit https://github.com/rust-lang/rust/issues/16744
             match ch {
-                'a' => "\u{07}",
-                'b' => "\u{08}",
-                't' => "\u{09}",
-                'n' => "\u{0A}",
-                'v' => "\u{0B}",
-                'f' => "\u{0C}",
-                'r' => "\u{0D}", // r
-                _ => "\u{1B}",   // e
+                'a' => "7",
+                'b' => "8",
+                't' => "9",
+                'n' => "10",
+                'v' => "11",
+                'f' => "12",
+                'r' => "13",
+                _ => "27", // e
             }
             .to_string()
         }
-        _ => ch.to_string(),
+        _ => (ch as u32).to_string(),
     }
 }
 
 // TODO: ここにこれまでのtokenizeの全ての負債が詰まっている, 直すべし
-fn read_string_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> String {
-    let mut str = String::new();
+fn read_string_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> Vec<String> {
+    let mut strings = Vec::new();
     loop {
         if let Some((_, ch)) = chars_peek.next() {
             match ch {
                 '\"' => break,
                 '\\' => {
-                    str += &read_escaped_literal(chars_peek);
+                    strings.push(read_escaped_literal(chars_peek));
                 }
                 _ => {
-                    str += &ch.to_string();
+                    strings.push((ch as u32).to_string());
                 }
             }
         } else {
             unimplemented!("Missing end of string literal.");
         }
     }
-    str + "\0"
+    strings.push("0".to_string());
+    strings
 }
 
 pub fn tokenize(line: String) -> Vec<Token> {
@@ -223,8 +265,9 @@ pub fn tokenize(line: String) -> Vec<Token> {
             // String literal
             '"' => {
                 chars_peek.next();
-                let str = read_string_literal(&mut chars_peek);
-                let token = Token::new(TokenKind::Str, i, line.clone(), str);
+                let strings = read_string_literal(&mut chars_peek);
+                let word = strings.join("");
+                let token = Token::new(TokenKind::Str(strings), i, line.clone(), word);
                 tokens.push(token);
             }
             // Punctuator
@@ -304,7 +347,7 @@ mod test {
         let code = "{ \"abcdefg\"; }".to_string();
         let tokenized = tokenize(code);
         assert_eq!(tokenized.len(), 4);
-        assert_eq!(tokenized[1].word, "abcdefg\0");
+        assert_eq!(tokenized[1].word, "9798991001011021030");
         assert_eq!(tokenized[2].word, ";");
     }
 
@@ -313,7 +356,7 @@ mod test {
         let code = "{ \"\n\\e\\r\"; }".to_string();
         let tokenized = tokenize(code);
         assert_eq!(tokenized.len(), 4);
-        assert_eq!(tokenized[1].word, "\u{0A}\u{1B}\u{0D}\u{0}");
+        assert_eq!(tokenized[1].word, "1027130");
         assert_eq!(tokenized[2].word, ";");
     }
 }

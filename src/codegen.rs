@@ -273,13 +273,14 @@ fn emit_data(prog: &Program) {
     println!(".data");
     for var in prog.globals.iter() {
         println!("{}:", var.name);
-        if let VarType::Global(Some(init_data)) = var.var_ty.clone() {
-            for ch in init_data.chars() {
-                let chnum = ch as u32;
-                println!("  .byte {}", chnum);
+        if let VarType::Global(init_data) = var.var_ty.clone() {
+            if init_data.len() > 0 {
+                for s in init_data.iter() {
+                    println!("  .byte {}", s);
+                }
+            } else {
+                println!("  .zero {}", var.ty.size);
             }
-        } else {
-            println!("  .zero {}", var.ty.size);
         }
     }
 }
