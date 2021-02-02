@@ -60,8 +60,8 @@ pub enum NodeKind {
 // Variable
 #[derive(Clone, Debug)]
 pub enum VarType {
-    Local(usize),           // Offset from RBP
-    Global(Option<String>), // initdata
+    Local(usize),        // Offset from RBP
+    Global(Vec<String>), // initdata
 }
 
 #[derive(Clone, Debug)]
@@ -80,7 +80,7 @@ impl Var {
         }
     }
 
-    pub fn new_gvar(name: String, ty: Type, init_data: Option<String>) -> Var {
+    pub fn new_gvar(name: String, ty: Type, init_data: Vec<String>) -> Var {
         Var {
             name,
             ty,
@@ -88,9 +88,9 @@ impl Var {
         }
     }
 
-    pub fn new_string_literal(name: String, init_data: String) -> Var {
+    pub fn new_string_literal(name: String, init_data: Vec<String>) -> Var {
         let ty = Type::new_string(init_data.len());
-        Var::new_gvar(name, ty, Some(init_data))
+        Var::new_gvar(name, ty, init_data)
     }
 
     // 変数間のoffsetを計算するUtil関数 将来的に消す

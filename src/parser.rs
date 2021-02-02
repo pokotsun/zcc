@@ -117,7 +117,7 @@ impl<'a> Parser<'a> {
                 _ => {
                     // Global variable
                     loop {
-                        let var = Var::new_gvar(name, ty.clone(), None);
+                        let var = Var::new_gvar(name, ty.clone(), Vec::new());
                         parser.globals.push(var);
                         if consume(&mut parser.tok_peek, ";") {
                             break;
@@ -559,9 +559,9 @@ impl<'a> Parser<'a> {
                 };
                 Node::new_var_node(var)
             }
-            TokenKind::Str => {
+            TokenKind::Str(words) => {
                 let name = self.new_unique_name();
-                let gvar = Var::new_string_literal(name, tok.word.clone());
+                let gvar = Var::new_string_literal(name, words.clone());
                 self.globals.push(gvar.clone());
                 Node::new_var_node(gvar)
             }
