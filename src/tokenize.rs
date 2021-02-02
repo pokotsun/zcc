@@ -93,15 +93,10 @@ fn read_escaped_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> String 
             let mut num = ch.to_digit(8).unwrap();
             for _ in 0..2 {
                 // 3桁まで表せるため
-                if let Some((_, ch)) = chars_peek.peek().cloned() {
-                    match ch {
-                        '0'..='7' => {
-                            chars_peek.next();
-                            num <<= 3;
-                            num += ch.to_digit(8).unwrap();
-                        }
-                        _ => break,
-                    }
+                if let Some((_, ch @ '0'..='7')) = chars_peek.peek().cloned() {
+                    chars_peek.next();
+                    num <<= 3;
+                    num += ch.to_digit(8).unwrap();
                 }
             }
             num.to_string()
