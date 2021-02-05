@@ -28,7 +28,7 @@ use std::{iter::Peekable, rc::Rc, unimplemented};
 pub struct Function {
     pub name: String,
     pub params: Vec<Var>,
-    pub body: Node,
+    pub body: Node, // Block or statement expression
     #[allow(dead_code)]
     locals: Vec<Var>, // local variables
     pub stack_size: usize,
@@ -321,7 +321,7 @@ impl<'a> Parser<'a> {
 
         if next_equal(&mut self.tok_peek, "{") {
             self.tok_peek.next();
-            return Self::compound_stmt(self);
+            return self.compound_stmt();
         }
         Self::expr_stmt(self)
     }
@@ -530,9 +530,22 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // primary = "(" expr ")" | "sizeof" unary | ident func-args? | str | num
+    // primary = "(" "{" stmt stmt* "}" ")"
+    //         | "(" expr ")"
+    //         | "sizeof" unary
+    //         | ident func-args?
+    //         | str
+    //         | num
     fn primary(&mut self) -> Node {
         let tok = self.tok_peek.next().unwrap();
+        if tok.equal("(") && next_equal(&mut self.tok_peek, "{") {
+            skip(&mut self.tok_peek, "{");
+            // This is a GNU statement expression.
+            let body = self.compound_stmt();
+            let node = Node::new_unary(UnaryOp::StmtExpr, body);
+            skip(&mut self.tok_peek, ")");
+            return node;
+        }
         if tok.equal("(") {
             let node = Self::expr(self);
             skip(&mut self.tok_peek, ")");

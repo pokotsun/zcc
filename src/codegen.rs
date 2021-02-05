@@ -161,6 +161,14 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
         NodeKind::Unary(UnaryOp::Addr, child) => {
             top = gen_addr(child, top).unwrap();
         }
+        // NodeKind::Unary(UnaryOp::StmtExpr, child) => {
+        //     if let NodeKind::Block(nodes) = &child.kind {
+        //         for node in nodes.iter() {
+        //             gen_stmt(node, label_counter, func, top)
+        //         }
+        //         top+=1;
+        //     }
+        // }
         NodeKind::FunCall { name, args } => {
             let nargs = args.len();
             args.iter().for_each(|arg| top = gen_expr(arg, top));
