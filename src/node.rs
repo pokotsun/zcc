@@ -5,6 +5,7 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub enum UnaryOp {
     ExprStmt,
+    StmtExpr, // statement expression
     Return,
     Addr,
     Deref,
@@ -119,6 +120,16 @@ impl Node {
                     TypeKind::Arr { base, .. } => (*base.as_ref()).clone(),
                     _ => child.get_type(),
                 },
+                UnaryOp::StmtExpr => {
+                    if let NodeKind::Block(nodes) = &child.kind {
+                        if let Some(NodeKind::Unary(UnaryOp::ExprStmt, child)) =
+                            nodes.last().map(|node| &node.kind)
+                        {
+                            return child.get_type();
+                        }
+                    }
+                    unimplemented!("statement expression returning void is not supported");
+                }
                 _ => unreachable!(),
             },
             NodeKind::Bin { op: binop, lhs, .. } => match binop {
