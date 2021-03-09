@@ -7,9 +7,8 @@ use crate::{
     node::{BinOp, Node, NodeKind, UnaryOp, VarType},
     util::LabelCounter,
 };
-//
-// Code Generator
-//
+use anyhow::anyhow;
+use anyhow::Result;
 
 const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
 const ARG_REGISTERS8: [&str; 6] = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
@@ -226,7 +225,7 @@ impl<'a> FuncGenerator<'a> {
     }
 
     // return register top index
-    fn gen_stmt(&mut self, node: &Node, top: usize) -> Result<usize, String> {
+    fn gen_stmt(&mut self, node: &Node, top: usize) -> Result<usize> {
         let stack_top = match &node.kind {
             NodeKind::Unary(UnaryOp::Return, child) => {
                 let top = self.gen_expr(child, top) - 1;
@@ -293,17 +292,17 @@ impl<'a> FuncGenerator<'a> {
             NodeKind::Block(body) => body.iter().fold(Ok(top), |acc, node| {
                 acc.and_then(|x| self.gen_stmt(&node, top).and_then(|y| Ok(x + y)))
             }),
-            _ => Err(format!("invalid statement: {:?}", node)),
+            _ => Err(anyhow!("invalid statement: {:?}", node)),
         };
         match stack_top {
             Ok(0) => Ok(0),
-            Ok(_) => Err(format!("statement register top is invalid: {:?}", node)),
+            Ok(_) => Err(anyhow!("statement register top is invalid: {:?}", node)),
             Err(msg) => Err(msg),
         }
     }
 }
 
-fn emit_text(prog: &Program) {
+fn emit_text(prog: &Program) -> Result<()> {
     println!(".text");
 
     let mut org_label_counter = LabelCounter::new();
@@ -339,7 +338,7 @@ fn emit_text(prog: &Program) {
         // Emit code
         // if let Err(msg) = gen_stmt(&func.body, &mut label_counter, &func, 0) {
         if let Err(msg) = fn_gen.gen_stmt(&fn_gen.func.body, 0) {
-            error(&msg);
+            return Err(anyhow!(msg));
         }
 
         // Epilogue
@@ -354,9 +353,11 @@ fn emit_text(prog: &Program) {
         // retすることでそのスタック上の値を読み出しcallの次の命令に移動
         println!("  ret");
     }
+    Ok(())
 }
 
-pub fn codegen(prog: Program) {
+pub fn codegen(prog: Program) -> Result<()> {
     emit_data(&prog);
-    emit_text(&prog);
+    emit_text(&prog)?;
+    Ok(())
 }
