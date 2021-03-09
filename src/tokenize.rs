@@ -1,4 +1,5 @@
 use crate::util::*;
+use anyhow::Result;
 use itertools::{multipeek, MultiPeek};
 use std::rc::Rc;
 use std::slice::Iter;
@@ -166,7 +167,7 @@ fn read_string_literal(chars_peek: &mut MultiPeek<Enumerate<Chars>>) -> Vec<Stri
     strings
 }
 
-pub fn tokenize(line: String) -> Vec<Token> {
+pub fn tokenize(line: String) -> Result<Vec<Token>> {
     let line = Rc::new(line);
     let mut chars_peek = multipeek(line.chars().enumerate());
     let mut tokens = Vec::new();
@@ -271,10 +272,12 @@ pub fn tokenize(line: String) -> Vec<Token> {
                 let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
                 tokens.push(token);
             }
-            _ => error_at(i, &line, "invalid token"),
+            _ => {
+                return Err(error_at(i, &line, "invalid token"));
+            }
         }
     }
-    tokens
+    Ok(tokens)
 }
 
 pub fn error_tok(tok: &Token, err_msg: &str) {
@@ -288,7 +291,7 @@ mod test {
     #[test]
     fn tokenize_0() {
         let code = "1;".to_string();
-        let tokenized = tokenize(code);
+        let tokenized = tokenize(code).unwrap();
         assert_eq!(tokenized.len(), 2);
         assert_eq!(tokenized[0].word, "1");
         assert_eq!(tokenized[1].word, ";");
@@ -297,7 +300,7 @@ mod test {
     #[test]
     fn tokenize_add_sub() {
         let code = "1+2-32;".to_string();
-        let tokenized = tokenize(code);
+        let tokenized = tokenize(code).unwrap();
         assert_eq!(tokenized.len(), 6);
         assert_eq!(tokenized[0].word, "1");
         assert_eq!(tokenized[1].word, "+");
@@ -310,7 +313,7 @@ mod test {
     #[test]
     fn tokenize_multiple_letter_variable() {
         let code = "abc = 3;".to_string();
-        let tokenized = tokenize(code);
+        let tokenized = tokenize(code).unwrap();
         assert_eq!(tokenized.len(), 4);
         assert_eq!(tokenized[0].word, "abc");
         assert_eq!(tokenized[1].word, "=");
@@ -320,7 +323,7 @@ mod test {
     #[test]
     fn tokenize_multiple_letter_with_num_variable() {
         let code = "abc123 = 3;".to_string();
-        let tokenized = tokenize(code);
+        let tokenized = tokenize(code).unwrap();
         assert_eq!(tokenized.len(), 4);
         assert_eq!(tokenized[0].word, "abc123");
         assert_eq!(tokenized[1].word, "=");
@@ -330,7 +333,7 @@ mod test {
     #[test]
     fn tokenize_if_else() {
         let code = "{ if (1) return 2; else return 3; }".to_string();
-        let tokenized = tokenize(code);
+        let tokenized = tokenize(code).unwrap();
         assert_eq!(tokenized.len(), 13);
         assert_eq!(tokenized[1].word, "if");
         assert_eq!(tokenized[9].word, "return");
@@ -340,7 +343,7 @@ mod test {
     #[test]
     fn tokenize_str() {
         let code = "{ \"abcdefg\"; }".to_string();
-        let tokenized = tokenize(code);
+        let tokenized = tokenize(code).unwrap();
         assert_eq!(tokenized.len(), 4);
         assert_eq!(tokenized[1].word, "9798991001011021030");
         assert_eq!(tokenized[2].word, ";");
@@ -349,7 +352,7 @@ mod test {
     #[test]
     fn tokenize_escaped_literal() {
         let code = "{ \"\n\\e\\r\"; }".to_string();
-        let tokenized = tokenize(code);
+        let tokenized = tokenize(code).unwrap();
         assert_eq!(tokenized.len(), 4);
         assert_eq!(tokenized[1].word, "1027130");
         assert_eq!(tokenized[2].word, ";");
