@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     // Tokenize and parse.
     let chars = args[1].clone();
 
-    let tokens = tokenize(chars);
+    let tokens = tokenize(chars)?;
     let tok_peek = tokens.iter().peekable();
 
     let prog = Parser::parse(tok_peek);

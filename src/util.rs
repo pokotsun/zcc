@@ -1,4 +1,5 @@
 use crate::tokenize::Token;
+use anyhow::anyhow;
 use itertools::structs::MultiPeek;
 use std::iter::{Enumerate, Iterator};
 use std::process;
@@ -38,10 +39,13 @@ pub fn error(msg: &str) {
     process::exit(1);
 }
 
-pub fn error_at(loc: usize, line: &str, err_msg: &str) {
-    eprintln!("{}", line);
-    eprintln!("{}", " ".repeat(loc) + &format!("^ {}", err_msg));
-    process::exit(1);
+pub fn error_at(loc: usize, line: &str, err_msg: &str) -> anyhow::Error {
+    let msg = format!(
+        "{}\n{}",
+        line,
+        " ".repeat(7 + loc) + &format!("^ {}", err_msg)
+    );
+    anyhow!(msg)
 }
 
 pub fn error_tok(tok: &Token, err_msg: &str) {
