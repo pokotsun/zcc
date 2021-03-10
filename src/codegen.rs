@@ -2,7 +2,6 @@ use std::unimplemented;
 
 use crate::parser::*;
 use crate::types::{Type, TypeKind};
-use crate::util::error;
 use crate::{
     node::{BinOp, Node, NodeKind, UnaryOp, VarType},
     util::LabelCounter,
@@ -94,7 +93,8 @@ impl<'a> FuncGenerator<'a> {
             label_counter,
         }
     }
-    fn gen_addr(&mut self, node: &Node, top: usize) -> Result<usize, String> {
+
+    fn gen_addr(&mut self, node: &Node, top: usize) -> Result<usize> {
         match &node.kind {
             NodeKind::Var { var } => {
                 match var.var_ty.clone() {
@@ -109,14 +109,17 @@ impl<'a> FuncGenerator<'a> {
             }
             NodeKind::Unary(UnaryOp::Deref, child) => {
                 let top = self.gen_expr(child, top);
-                Ok(top)
+                top
             }
-            _ => Err(format!("NodeKind is Invalid: {:?}, expected Var", node)),
+            _ => {
+                let msg = format!("NodeKind is Invalid: {:?}, expected Var", node);
+                Err(anyhow!(msg))
+            }
         }
     }
 
     #[allow(unused_must_use)]
-    fn gen_expr(&mut self, node: &Node, mut top: usize) -> usize {
+    fn gen_expr(&mut self, node: &Node, mut top: usize) -> Result<usize> {
         match &node.kind {
             NodeKind::Num(val) => {
                 println!("  mov ${}, {}", val, reg(top));
@@ -130,13 +133,13 @@ impl<'a> FuncGenerator<'a> {
                 if let TypeKind::Arr { .. } = node.get_type().kind.as_ref() {
                     unimplemented!("array will not be assigned.")
                 }
-                top = self.gen_expr(&*rhs, top);
+                top = self.gen_expr(&*rhs, top)?;
                 top = self.gen_addr(&*lhs, top).unwrap();
                 top = store(node.get_type(), top);
             }
             NodeKind::Bin { op, lhs, rhs } => {
-                top = self.gen_expr(&*lhs, top);
-                top = self.gen_expr(&*rhs, top);
+                top = self.gen_expr(&*lhs, top)?;
+                top = self.gen_expr(&*rhs, top)?;
                 let rd = reg(top - 2);
                 let rs = reg(top - 1);
                 top -= 1;
@@ -171,7 +174,10 @@ impl<'a> FuncGenerator<'a> {
                         println!("  setle %al");
                         println!("  movzb %al, {}", rd);
                     }
-                    _ => error("Invalid BinOp, probably Assign"),
+                    _ => {
+                        let msg = "Invalid BinOp, probably Assign".to_string();
+                        return Err(anyhow!(msg));
+                    }
                 }
             }
             NodeKind::Var { .. } => {
@@ -179,7 +185,7 @@ impl<'a> FuncGenerator<'a> {
                 load(node.get_type(), top);
             }
             NodeKind::Unary(UnaryOp::Deref, child) => {
-                top = self.gen_expr(child, top);
+                top = self.gen_expr(child, top)?;
                 load(node.get_type(), top);
             }
             NodeKind::Unary(UnaryOp::Addr, child) => {
@@ -195,7 +201,8 @@ impl<'a> FuncGenerator<'a> {
             }
             NodeKind::FunCall { name, args } => {
                 let nargs = args.len();
-                args.iter().for_each(|arg| top = self.gen_expr(arg, top));
+                args.iter()
+                    .for_each(|arg| top = self.gen_expr(arg, top).unwrap());
 
                 for i in 1..=nargs {
                     top -= 1;
@@ -213,17 +220,17 @@ impl<'a> FuncGenerator<'a> {
                 top += 1;
             }
             _ => {
-                error(&format!("invalid expression: {:?}", node));
+                return Err(anyhow!(format!("invalid expression: {:?}", node)));
             }
         }
-        top
+        Ok(top)
     }
 
     // return register top index
     fn gen_stmt(&mut self, node: &Node, top: usize) -> Result<usize> {
         let stack_top = match &node.kind {
             NodeKind::Unary(UnaryOp::Return, child) => {
-                let top = self.gen_expr(child, top) - 1;
+                let top = self.gen_expr(child, top)? - 1;
                 // Set the result of the expression to RAX so that
                 // the result becomes a return value of this function.
                 println!("  mov {}, %rax", reg(top));
@@ -231,10 +238,10 @@ impl<'a> FuncGenerator<'a> {
 
                 Ok(top)
             }
-            NodeKind::Unary(UnaryOp::ExprStmt, child) => Ok(self.gen_expr(child, top) - 1),
+            NodeKind::Unary(UnaryOp::ExprStmt, child) => Ok(self.gen_expr(child, top)? - 1),
             NodeKind::If { cond, then, els } => {
                 let c = self.label_counter.next().unwrap();
-                let mut top = self.gen_expr(cond, top);
+                let mut top = self.gen_expr(cond, top)?;
                 println!("  cmp $0, {}", reg(top - 1));
                 top -= 1;
                 println!("  je .L.else.{}", c);
@@ -258,14 +265,14 @@ impl<'a> FuncGenerator<'a> {
                 let mut top = self.gen_stmt(init, top)?;
                 println!(".L.begin.{}:", c);
                 if let Some(node) = cond.as_ref() {
-                    top = self.gen_expr(node, top);
+                    top = self.gen_expr(node, top)?;
                     println!("  cmp $0, {}", reg(top - 1));
                     top -= 1;
                     println!("  je .L.end.{}", c);
                 }
                 top = self.gen_stmt(then, top)?;
                 if let Some(node) = inc.as_ref() {
-                    top = self.gen_expr(node, top);
+                    top = self.gen_expr(node, top)?;
                     top -= 1;
                 }
                 println!("  jmp .L.begin.{}", c);
@@ -275,7 +282,7 @@ impl<'a> FuncGenerator<'a> {
             NodeKind::While { cond, then } => {
                 let c = self.label_counter.next().unwrap();
                 println!(".L.begin.{}:", c);
-                let mut top = self.gen_expr(cond, top);
+                let mut top = self.gen_expr(cond, top)?;
                 println!("  cmp $0, {}", reg(top - 1));
                 top -= 1;
                 println!("  je .L.end.{}", c);
