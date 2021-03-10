@@ -15,9 +15,10 @@
 // Most parsing functions don't change the global state of the parser.
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
+use crate::tokenize::error_tok;
 use crate::tokenize::{consume, is_typename, next_equal, skip, Token, TokenKind};
 use crate::types::{FuncParam, Type, TypeKind};
-use crate::util::{align_to, error, error_tok};
+use crate::util::align_to;
 use crate::{
     node::{BinOp, Node, NodeKind, UnaryOp, Var},
     util::LabelCounter,
@@ -583,8 +584,8 @@ impl<'a> Parser<'a> {
                 let x = if let Some(x) = tok.get_number() {
                     x
                 } else {
-                    error(&format!("token number parse error: {:?}", tok));
-                    unimplemented!()
+                    let msg = format!("token number parse error: {:?}", tok);
+                    unimplemented!("{}", msg);
                 };
                 Node::new(NodeKind::Num(x))
             }

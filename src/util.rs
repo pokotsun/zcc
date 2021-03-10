@@ -1,8 +1,6 @@
-use crate::tokenize::Token;
 use anyhow::anyhow;
 use itertools::structs::MultiPeek;
 use std::iter::{Enumerate, Iterator};
-use std::process;
 use std::str::Chars;
 
 #[macro_export]
@@ -34,11 +32,6 @@ impl Iterator for LabelCounter {
     }
 }
 
-pub fn error(msg: &str) {
-    eprintln!("{}", msg);
-    process::exit(1);
-}
-
 pub fn error_at(loc: usize, line: &str, err_msg: &str) -> anyhow::Error {
     let msg = format!(
         "{}\n{}",
@@ -46,11 +39,6 @@ pub fn error_at(loc: usize, line: &str, err_msg: &str) -> anyhow::Error {
         " ".repeat(7 + loc) + &format!("^ {}", err_msg)
     );
     anyhow!(msg)
-}
-
-pub fn error_tok(tok: &Token, err_msg: &str) {
-    eprintln!("{}", tok.word);
-    error(err_msg);
 }
 
 pub fn strtol(chars: &mut MultiPeek<Enumerate<Chars>>) -> i64 {
