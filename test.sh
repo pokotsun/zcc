@@ -16,7 +16,26 @@ assert() {
 
     # ./chibicc "$input" が失敗したときのみexit
 	echo "test: $input"
-    ./zcc "$input" > tmp.s || exit
+    ./zcc - "$input" > tmp.s || exit
+    gcc -static -o tmp tmp.s tmp2.o
+    ./tmp
+    actual="$?"
+
+    if [ "$actual" = "$expected" ]; then
+        echo "$input => $actual"
+    else
+        echo "$input => $expected expected, but got $actual"
+        exit 1
+    fi
+}
+
+assert_from_file() {
+    expected="$1"
+    file="$2"
+
+    echo "int main() { return 0; }" > tmp.c
+    echo "test from file: $file"
+    ./zcc tmp.c > tmp.s || exit
     gcc -static -o tmp tmp.s tmp2.o
     ./tmp
     actual="$?"
@@ -217,5 +236,7 @@ assert 2 'int main() { return ({ 0; 1; 2; }); }'
 assert 1 'int main() { ({ 0; return 1; 2; }); return 3; }'
 assert 6 'int main() { return ({ 1; }) + ({ 2; }) + ({ 3; }); }'
 assert 3 'int main() { return ({ int x=3; x; }); }'
+
+assert_from_file 0 'int main() { return 0; }'
 
 echo OK

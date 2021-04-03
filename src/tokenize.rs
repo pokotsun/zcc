@@ -272,12 +272,19 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
                 tokens.push(token);
             }
+            '\n' => {
+                continue;
+            }
             _ => {
-                return Err(error_at(i, &line, "invalid token"));
+                return Err(error_at(i, &line, &format!("invalid token: {}", ch)));
             }
         }
     }
     Ok(tokens)
+}
+
+pub fn tokenize_file(file_path: String) -> Result<Vec<Token>> {
+    tokenize(file_path)
 }
 
 pub fn error_tok(tok: &Token, err_msg: &str) {
