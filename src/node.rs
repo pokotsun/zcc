@@ -73,14 +73,16 @@ pub struct Var {
     pub name: String,
     pub ty: Type,
     pub var_ty: VarType,
+    pub scope_depth: usize,
 }
 
 impl Var {
-    pub fn new_lvar(name: String, offset: usize, ty: Type) -> Var {
+    pub fn new_lvar(name: String, offset: usize, ty: Type, scope_depth: usize) -> Var {
         Var {
             name,
             ty,
             var_ty: VarType::Local(Rc::new(Cell::new(offset))),
+            scope_depth,
         }
     }
 
@@ -89,6 +91,7 @@ impl Var {
             name,
             ty,
             var_ty: VarType::Global(init_data),
+            scope_depth: 0,
         }
     }
 

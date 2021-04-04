@@ -72,6 +72,7 @@ pub struct Parser<'a> {
     tok_peek: Peekable<Iter<'a, Token>>,
     locals: VecDeque<Rc<Var>>,
     globals: VecDeque<Rc<Var>>,
+    scope_depth: usize,
     data_idx: LabelCounter,
 }
 
@@ -81,6 +82,7 @@ impl<'a> Parser<'a> {
             tok_peek,
             locals: VecDeque::new(),
             globals: VecDeque::new(),
+            scope_depth: 0,
             data_idx: LabelCounter::new(),
         }
     }
@@ -95,16 +97,26 @@ impl<'a> Parser<'a> {
         if let Some(x) = self
             .locals
             .iter()
-            .find(|x| x.name == name)
+            .rev() // scopeが深いものから探すようにする
+            .find(|x| x.name == name && x.scope_depth <= self.scope_depth)
             .map(|var| var.clone())
         {
             Some(x)
         } else {
+            // Global variable
             self.globals
                 .iter()
                 .find(|x| x.name == name)
                 .map(|x| x.clone())
         }
+    }
+
+    fn enter_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn leave_scope(&mut self) {
+        self.scope_depth -= 1;
     }
 
     // program = (funcdef | global-var)*
@@ -156,6 +168,8 @@ impl<'a> Parser<'a> {
     // 主にcompoud-stmtの処理を行う
     // typed-funcdef = typespec declarator compound-stmt
     fn typed_funcdef(&mut self, ty: Type, func_name: String) -> Function {
+        self.enter_scope();
+
         let mut var_params = VecDeque::new();
         if let TypeKind::Func {
             return_ty: _,
@@ -165,7 +179,7 @@ impl<'a> Parser<'a> {
             for (ty, var_name) in params.iter() {
                 // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
                 // 一旦無効な値0を入れる
-                let var = Var::new_lvar(var_name.clone(), 0, ty.clone());
+                let var = Var::new_lvar(var_name.clone(), 0, ty.clone(), self.scope_depth);
                 let var = Rc::new(var);
                 var_params.push_front(var.clone());
                 self.locals.push_front(var);
@@ -174,6 +188,7 @@ impl<'a> Parser<'a> {
 
         skip(&mut self.tok_peek, "{");
         let body = self.compound_stmt();
+        self.leave_scope();
 
         Function::new(func_name, var_params, body, self.locals.clone())
     }
@@ -256,7 +271,7 @@ impl<'a> Parser<'a> {
             let (ty, name) = Self::declarator(self, basety.clone());
             // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
             // 一旦無効な値0を入れる
-            let var = Var::new_lvar(name, 0, ty.clone());
+            let var = Var::new_lvar(name, 0, ty.clone(), self.scope_depth);
             let var = Rc::new(var);
             let rcvar = var.clone();
             self.locals.push_front(var);
@@ -350,6 +365,8 @@ impl<'a> Parser<'a> {
     fn compound_stmt(&mut self) -> Node {
         let mut nodes = vec![];
 
+        self.enter_scope();
+
         while !next_equal(&mut self.tok_peek, "}") {
             let node = if is_typename(&mut self.tok_peek) {
                 Self::declaration(self)
@@ -360,6 +377,9 @@ impl<'a> Parser<'a> {
         }
 
         skip(&mut self.tok_peek, "}");
+
+        self.leave_scope();
+
         Node::new_block_node(nodes)
     }
 
