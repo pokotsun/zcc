@@ -176,6 +176,7 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
         chars_peek.reset_peek();
 
         if startswith(&mut chars_peek, "//") {
+            // Singleline comment out
             while let Some((_, ch)) = chars_peek.next() {
                 if ch == '\n' {
                     break;
@@ -183,6 +184,7 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
             }
             continue;
         } else if startswith(&mut chars_peek, "/*") {
+            // Multiline comment out
             nth_next(&mut chars_peek, 2); // for /*
             while !startswith(&mut chars_peek, "*/") {
                 if let None = chars_peek.next() {
@@ -302,10 +304,6 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
         }
     }
     Ok(tokens)
-}
-
-pub fn tokenize_file(file_path: String) -> Result<Vec<Token>> {
-    tokenize(file_path)
 }
 
 pub fn error_tok(tok: &Token, err_msg: &str) {

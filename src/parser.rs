@@ -65,6 +65,7 @@ pub struct Parser<'a> {
     tok_peek: Peekable<Iter<'a, Token>>,
     locals: Vec<Var>,
     globals: Vec<Var>,
+    scope_depth: usize,
     data_idx: LabelCounter,
 }
 
@@ -74,6 +75,7 @@ impl<'a> Parser<'a> {
             tok_peek,
             locals: Vec::new(),
             globals: Vec::new(),
+            scope_depth: 0,
             data_idx: LabelCounter::new(),
         }
     }
@@ -93,11 +95,27 @@ impl<'a> Parser<'a> {
         {
             Some(x)
         } else {
+            // Global variable
             self.globals
                 .iter()
                 .find(|x| x.name == name)
                 .map(|x| x.clone())
         }
+    }
+
+    fn enter_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn leave_scope(&mut self) {
+        self.scope_depth -= 1;
+        let mut unscoped_localvars = Vec::new();
+        for local in self.locals.iter() {
+            if local.scope_depth <= self.scope_depth {
+                unscoped_localvars.push(local.clone());
+            }
+        }
+        self.locals = unscoped_localvars;
     }
 
     // program = (funcdef | global-var)*
@@ -148,6 +166,8 @@ impl<'a> Parser<'a> {
     // 主にcompoud-stmtの処理を行う
     // typed-funcdef = typespec declarator compound-stmt
     fn typed_funcdef(&mut self, ty: Type, func_name: String) -> Function {
+        self.enter_scope();
+
         let mut var_params = Vec::new();
         if let TypeKind::Func {
             return_ty: _,
@@ -155,8 +175,12 @@ impl<'a> Parser<'a> {
         } = ty.kind
         {
             for (ty, var_name) in params.iter() {
-                let var =
-                    Var::new_lvar(var_name.clone(), Var::calc_offset(&var_params), ty.clone());
+                let var = Var::new_lvar(
+                    var_name.clone(),
+                    Var::calc_offset(&var_params),
+                    ty.clone(),
+                    self.scope_depth,
+                );
                 var_params.push(var.clone());
                 self.locals.push(var.clone());
             }
@@ -164,6 +188,7 @@ impl<'a> Parser<'a> {
 
         skip(&mut self.tok_peek, "{");
         let body = self.compound_stmt();
+        self.leave_scope();
 
         Function::new(func_name, var_params, body, self.locals.clone())
     }
@@ -244,7 +269,12 @@ impl<'a> Parser<'a> {
             is_already_declared = true;
 
             let (ty, name) = Self::declarator(self, basety.clone());
-            let var = Var::new_lvar(name, Var::calc_offset(&self.locals), ty.clone());
+            let var = Var::new_lvar(
+                name,
+                Var::calc_offset(&self.locals),
+                ty.clone(),
+                self.scope_depth,
+            );
             self.locals.push(var.clone());
 
             if !next_equal(&mut self.tok_peek, "=") {
@@ -331,6 +361,8 @@ impl<'a> Parser<'a> {
     fn compound_stmt(&mut self) -> Node {
         let mut nodes = Vec::new();
 
+        self.enter_scope();
+
         while !next_equal(&mut self.tok_peek, "}") {
             let node = if is_typename(&mut self.tok_peek) {
                 Self::declaration(self)
@@ -341,6 +373,9 @@ impl<'a> Parser<'a> {
         }
 
         skip(&mut self.tok_peek, "}");
+
+        self.leave_scope();
+
         Node::new_block_node(nodes)
     }
 
