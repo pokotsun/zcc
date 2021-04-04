@@ -64,6 +64,13 @@ pub fn startswith(chars: &mut MultiPeek<Enumerate<Chars>>, actual: &str) -> bool
     ok
 }
 
+pub fn nth_next<'a>(chars: &'a mut MultiPeek<Enumerate<Chars>>, n: usize) -> Option<(usize, char)> {
+    for _ in 0..n - 1 {
+        chars.next();
+    }
+    chars.next()
+}
+
 pub fn nth_peek<'a>(
     chars: &'a mut MultiPeek<Enumerate<Chars>>,
     n: usize,
