@@ -182,6 +182,15 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 }
             }
             continue;
+        } else if startswith(&mut chars_peek, "/*") {
+            nth_next(&mut chars_peek, 2); // for /*
+            while !startswith(&mut chars_peek, "*/") {
+                if let None = chars_peek.next() {
+                    break;
+                }
+            }
+            nth_next(&mut chars_peek, 2); // for */
+            continue;
         }
         chars_peek.peek();
 
@@ -292,7 +301,6 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
             }
         }
     }
-    eprintln!("{:#?}", tokens);
     Ok(tokens)
 }
 
