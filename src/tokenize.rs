@@ -173,6 +173,18 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
     let mut tokens = Vec::new();
 
     while let Some((i, ch)) = chars_peek.peek().cloned() {
+        chars_peek.reset_peek();
+
+        if startswith(&mut chars_peek, "//") {
+            while let Some((_, ch)) = chars_peek.next() {
+                if ch == '\n' {
+                    break;
+                }
+            }
+            continue;
+        }
+        chars_peek.peek();
+
         match ch {
             // skip whitespace characters.
             ' ' => {
@@ -280,6 +292,7 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
             }
         }
     }
+    eprintln!("{:#?}", tokens);
     Ok(tokens)
 }
 
