@@ -296,13 +296,14 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 tokens.push(token);
             }
             '\n' => {
-                continue;
+                chars_peek.next();
             }
             _ => {
                 return Err(error_at(i, &line, &format!("invalid token: {}", ch)));
             }
         }
     }
+    // eprintln!("{:#?}", tokens.iter().map(|x| x.word.clone()));
     Ok(tokens)
 }
 

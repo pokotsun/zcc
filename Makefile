@@ -1,3 +1,4 @@
+CFLAGS=-std=c11 -g -static -fno-common
 all: zcc test clean
 
 zcc: clean
@@ -6,7 +7,9 @@ zcc: clean
 
 test: zcc
 	cargo test -- --nocapture
-	./test.sh
+	./zcc tests/tests.c > tmp.s
+	$(CC) -static -o tmp tmp.s
+	./tmp
 
 clean:
 	rm -f zcc tmp*

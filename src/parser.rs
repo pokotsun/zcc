@@ -72,6 +72,7 @@ pub struct Parser<'a> {
     tok_peek: Peekable<Iter<'a, Token>>,
     locals: VecDeque<Rc<Var>>,
     globals: VecDeque<Rc<Var>>,
+    var_scope: VecDeque<Rc<Var>>,
     scope_depth: usize,
     data_idx: LabelCounter,
 }
@@ -82,6 +83,7 @@ impl<'a> Parser<'a> {
             tok_peek,
             locals: VecDeque::new(),
             globals: VecDeque::new(),
+            var_scope: VecDeque::new(),
             scope_depth: 0,
             data_idx: LabelCounter::new(),
         }
@@ -93,22 +95,10 @@ impl<'a> Parser<'a> {
     }
 
     fn find_var(&self, name: String) -> Option<Rc<Var>> {
-        // TODO なんか汚いので修正
-        if let Some(x) = self
-            .locals
+        self.var_scope
             .iter()
-            .rev() // scopeが深いものから探すようにする
             .find(|x| x.name == name && x.scope_depth <= self.scope_depth)
             .map(|var| var.clone())
-        {
-            Some(x)
-        } else {
-            // Global variable
-            self.globals
-                .iter()
-                .find(|x| x.name == name)
-                .map(|x| x.clone())
-        }
     }
 
     fn enter_scope(&mut self) {
@@ -117,6 +107,13 @@ impl<'a> Parser<'a> {
 
     fn leave_scope(&mut self) {
         self.scope_depth -= 1;
+        while let Some(_) = self
+            .var_scope
+            .get(0)
+            .filter(|x| x.scope_depth > self.scope_depth)
+        {
+            self.var_scope.pop_front();
+        }
     }
 
     // program = (funcdef | global-var)*
@@ -139,6 +136,7 @@ impl<'a> Parser<'a> {
                     loop {
                         let var = Var::new_gvar(name, ty.clone(), Vec::new());
                         let var = Rc::new(var);
+                        parser.var_scope.push_front(var.clone());
                         parser.globals.push_front(var);
                         if consume(&mut parser.tok_peek, ";") {
                             break;
@@ -182,6 +180,7 @@ impl<'a> Parser<'a> {
                 let var = Var::new_lvar(var_name.clone(), 0, ty.clone(), self.scope_depth);
                 let var = Rc::new(var);
                 var_params.push_front(var.clone());
+                self.var_scope.push_front(var.clone());
                 self.locals.push_front(var);
             }
         }
@@ -274,6 +273,7 @@ impl<'a> Parser<'a> {
             let var = Var::new_lvar(name, 0, ty.clone(), self.scope_depth);
             let var = Rc::new(var);
             let rcvar = var.clone();
+            self.var_scope.push_front(var.clone());
             self.locals.push_front(var);
 
             if !next_equal(&mut self.tok_peek, "=") {
@@ -617,6 +617,7 @@ impl<'a> Parser<'a> {
                 let gvar = Var::new_string_literal(name, words.clone());
                 let gvar = Rc::new(gvar);
                 let rgvar = gvar.clone();
+                self.var_scope.push_front(gvar.clone());
                 self.globals.push_front(gvar);
                 Node::new_var_node(rgvar)
             }

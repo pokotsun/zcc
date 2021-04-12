@@ -297,8 +297,7 @@ impl<'a> FuncGenerator<'a> {
             _ => Err(anyhow!("invalid statement: {:?}", node)),
         };
         match stack_top {
-            Ok(0) => Ok(0),
-            Ok(_) => Err(anyhow!("statement register top is invalid: {:?}", node)),
+            Ok(x) => Ok(x),
             Err(msg) => Err(msg),
         }
     }
