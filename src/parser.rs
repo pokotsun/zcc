@@ -1,6 +1,9 @@
 use crate::tokenize::{skip, Token, TokenKind};
 use crate::util::align_to;
+use std::cell::Cell;
+use std::collections::VecDeque;
 use std::iter::Peekable;
+use std::rc::Rc;
 use std::slice::Iter;
 //
 // Parser
@@ -34,21 +37,23 @@ pub enum NodeKind {
         rhs: Box<Node>, // Right-hand side
     },
     Var {
-        var: Var,
+        var: Rc<Var>,
     },
 }
-
 
 // Local Variable
 #[derive(Clone, Debug)]
 pub struct Var {
     pub name: String,
-    pub offset: usize,
+    pub offset: Cell<usize>,
 }
 
 impl Var {
     fn new_lvar(name: String, offset: usize) -> Var {
-        Var { name, offset }
+        Var {
+            name,
+            offset: Cell::new(offset),
+        }
     }
 }
 // AST node type
@@ -76,14 +81,14 @@ impl Node {
         Node::new(kind)
     }
 
-    pub fn new_var_node(var: Var) -> Self {
+    pub fn new_var_node(var: Rc<Var>) -> Self {
         let kind = NodeKind::Var { var };
         Node::new(kind)
     }
 
     // stmt = "return" expr ";"
     //      | expr-stmt
-    fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let tok = tok_peek.peek().unwrap();
         if tok.equal("return") {
             tok_peek.next();
@@ -95,19 +100,19 @@ impl Node {
     }
 
     // expr-stmt = expr ";"
-    fn expr_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn expr_stmt(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let node = Node::new_unary(UnaryOp::ExprStmt, Node::expr(tok_peek, locals));
         skip(tok_peek, ";");
         return node;
     }
 
     // expr = assign
-    fn expr(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn expr(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         Node::assign(tok_peek, locals)
     }
 
     // assign = equality ("=" assign)?
-    fn assign(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn assign(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let mut node = Node::equality(tok_peek, locals);
         let tok = tok_peek.peek().unwrap();
         if tok.equal("=") {
@@ -118,7 +123,7 @@ impl Node {
     }
 
     // equality = relational ("==" relational | "!=" relational)
-    fn equality(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn equality(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let mut node = Node::relational(tok_peek, locals);
 
         loop {
@@ -140,7 +145,7 @@ impl Node {
     }
 
     // relational = add ("<" add | "<=" add | ">" add | ">=" add)*
-    fn relational(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn relational(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let mut node = Node::add(tok_peek, locals);
 
         loop {
@@ -175,7 +180,7 @@ impl Node {
     }
 
     // add = mul ("+" mul | "-" mul)*
-    fn add(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn add(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let mut node = Node::mul(tok_peek, locals);
         loop {
             let tok = tok_peek.peek().unwrap();
@@ -196,7 +201,7 @@ impl Node {
     }
 
     // mul = unary ("*" unary | "/" unary)*
-    fn mul(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn mul(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let mut node = Node::unary(tok_peek, locals);
 
         loop {
@@ -219,7 +224,7 @@ impl Node {
 
     // unary = ("+" | "-") unary
     //       | primary
-    fn unary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn unary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let tok = tok_peek.peek().unwrap();
         if tok.equal("+") {
             tok_peek.next();
@@ -239,7 +244,7 @@ impl Node {
     }
 
     // primary = "(" expr ")" | ident | num
-    fn primary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut Vec<Var>) -> Node {
+    fn primary(tok_peek: &mut Peekable<Iter<Token>>, locals: &mut VecDeque<Rc<Var>>) -> Node {
         let tok = tok_peek.next().unwrap();
         if tok.equal("(") {
             let node = Node::expr(tok_peek, locals);
@@ -251,9 +256,13 @@ impl Node {
                 let var = if let Some(x) = locals.iter().find(|x| x.name == *name) {
                     x.clone()
                 } else {
-                    let x = Var::new_lvar(name.clone(), 32 + (locals.len() + 1) * 8);
-                    locals.push(x.clone());
-                    x
+                    // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
+                    // 一旦無効な値0を入れる
+                    let x = Var::new_lvar(name.clone(), 0);
+                    let x = Rc::new(x);
+                    let rcx = x.clone();
+                    locals.push_front(x);
+                    rcx
                 };
 
                 Node::new_var_node(var)
@@ -261,31 +270,37 @@ impl Node {
             _ => Node::new(NodeKind::Num(tok.get_number().unwrap())),
         }
     }
-
 }
 
 pub struct Function {
     pub nodes: Vec<Node>,
     #[allow(dead_code)]
-    locals: Vec<Var>, // local variables
+    locals: VecDeque<Rc<Var>>, // local variables
     pub stack_size: usize,
 }
 
 impl Function {
-    fn new(nodes: Vec<Node>, locals: Vec<Var>) -> Self { 
-        let offset = 32 + 8 * (locals.len() + 1);
+    fn new(nodes: Vec<Node>, locals: VecDeque<Rc<Var>>) -> Self {
+        let mut offset = 32;
+        for local in locals.iter() {
+            offset += 8;
+            local.offset.set(offset);
+        }
         let stack_size = align_to(offset, 16);
 
-        Self { nodes, locals, stack_size } 
+        Self {
+            nodes,
+            locals,
+            stack_size,
+        }
     }
-
 
     // program = stmt*
     pub fn parse(tok_peek: &mut Peekable<Iter<Token>>) -> Self {
         let mut nodes = Vec::new();
         // All local variable instances created during parsing are
         // accumulated to this list.
-        let mut locals = Vec::new();
+        let mut locals = VecDeque::new();
         while let Some(tok) = tok_peek.peek() {
             if !matches!(tok.kind, TokenKind::Eof) {
                 let node = Node::stmt(tok_peek, &mut locals);

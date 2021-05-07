@@ -14,7 +14,7 @@ pub fn reg(idx: usize) -> &'static str {
 fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
     match &node.kind {
         NodeKind::Var { var } => {
-            println!("  lea -{}(%rbp), {}", var.offset, reg(top));
+            println!("  lea -{}(%rbp), {}", var.offset.get(), reg(top));
             Ok(top + 1)
         }
         _ => {
