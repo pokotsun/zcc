@@ -17,7 +17,7 @@ pub enum TypeKind {
 
 #[derive(Clone, Debug)]
 pub struct Type {
-    pub kind: TypeKind,
+    pub kind: Rc<TypeKind>,
     pub name: RefCell<String>,
     pub size: usize, // sizeof() value
                      // Pointer-to or array-of type. We intentionally use the same member
@@ -31,7 +31,7 @@ pub struct Type {
 }
 
 impl Type {
-    fn new(kind: TypeKind, name: String, size: usize) -> Self {
+    fn new(kind: Rc<TypeKind>, name: String, size: usize) -> Self {
         Self {
             kind,
             name: RefCell::new(name),
@@ -40,38 +40,40 @@ impl Type {
     }
     pub fn new_int() -> Self {
         // FIXME ここのString::newは消せないのか?
-        Self::new(TypeKind::Int, String::new(), 8)
+        Self::new(Rc::new(TypeKind::Int), String::new(), 8)
     }
 
     pub fn pointer_to(base: Rc<Type>, name: String) -> Self {
-        Self::new(TypeKind::Ptr(Rc::new(base.kind.clone())), name, 8)
+        Self::new(Rc::new(TypeKind::Ptr(base.kind.clone())), name, 8)
     }
 
-    pub fn array_of(base: Type, length: usize) -> Self {
+    pub fn array_of(base: Rc<Type>, length: usize) -> Self {
         let size = base.size * length;
         Self::new(
+            Rc::new(
             TypeKind::Arr {
-                base: Rc::new(base),
+                base,
                 length,
-            },
+            }),
             String::new(),
             size,
         )
     }
 
     pub fn is_ptr(self) -> bool {
-        match self.kind {
+        match self.kind.as_ref() {
             TypeKind::Ptr(_) => true,
             _ => false,
         }
     }
 
-    pub fn new_func(kind: TypeKind, params: Vec<Type>) -> Self {
+    pub fn new_func(kind: Rc<TypeKind>, params: Vec<Type>) -> Self {
         Self::new(
+            Rc::new(
             TypeKind::Func {
-                return_ty: Rc::new(kind),
+                return_ty: kind,
                 params,
-            },
+            }),
             String::new(),
             32,
         )

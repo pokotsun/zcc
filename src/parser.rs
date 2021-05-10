@@ -115,12 +115,12 @@ impl Node {
     pub fn get_type(&self) -> Type {
         match &self.kind {
             NodeKind::Unary(op, child) => match op {
-                UnaryOp::Addr => match child.get_type().kind {
-                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base, "arr".to_string()),
+                UnaryOp::Addr => match child.get_type().kind.as_ref() {
+                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base.clone(), "arr".to_string()),
                     _ => Type::pointer_to(Rc::new(child.get_type()), String::new()),
                 },
-                UnaryOp::Deref => match child.get_type().kind {
-                    TypeKind::Arr { base, .. } => Type::pointer_to(base, "arr".to_string()),
+                UnaryOp::Deref => match child.get_type().kind.as_ref() {
+                    TypeKind::Arr { base, .. } => Type::pointer_to(base.clone(), "arr".to_string()),
                     _ => child.get_type(),
                 },
                 _ => unreachable!(),
@@ -237,7 +237,7 @@ impl Node {
         if let TypeKind::Func {
             return_ty: _,
             params,
-        } = ty.kind
+        } = ty.kind.as_ref()
         {
             for param in params.iter() {
                 // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
@@ -289,7 +289,7 @@ impl Node {
             skip(tok_peek, "[");
             if let Some(size) = tok_peek.next().and_then(|tok| tok.get_number()) {
                 skip(tok_peek, "]");
-                return Type::array_of(ty, size as usize);
+                return Type::array_of(Rc::new(ty), size as usize);
             } else {
                 unimplemented!("Array length is not specified.");
             }

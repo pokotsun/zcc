@@ -57,7 +57,7 @@ fn gen_addr(node: &Node, top: usize) -> Result<usize, String> {
 }
 
 fn load(ty: Type, top: usize) {
-    if let TypeKind::Arr { .. } = ty.kind {
+    if let TypeKind::Arr { .. } = ty.kind.as_ref() {
         // If it is an array, do nothing because in general we can't load
         // an entire array to a register. As a result, the result of an
         // evaluation of an array becomes not the array itself but the
@@ -85,7 +85,7 @@ fn gen_expr(node: &Node, mut top: usize) -> usize {
             lhs,
             rhs,
         } => {
-            if let TypeKind::Arr { .. } = node.get_type().kind {
+            if let TypeKind::Arr { .. } = node.get_type().kind.as_ref() {
                 unimplemented!("array will not be assigned.")
             }
             top = gen_expr(&*rhs, top);
