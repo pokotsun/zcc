@@ -26,8 +26,8 @@ impl Iterator for LabelCounter {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {
-        let x = self.idx;
         self.idx += 1;
+        let x = self.idx;
         Some(x)
     }
 }

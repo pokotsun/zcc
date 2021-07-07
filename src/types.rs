@@ -19,7 +19,7 @@ pub enum TypeKind {
 
 #[derive(Clone, Debug)]
 pub struct Type {
-    pub kind: TypeKind,
+    pub kind: Rc<TypeKind>,
     pub size: usize, // sizeof() value
                      // Pointer-to or array-of type. We intentionally use the same member
                      // to represent pointer/array duality in C.
@@ -32,53 +32,46 @@ pub struct Type {
 }
 
 impl Type {
-    fn new(kind: TypeKind, size: usize) -> Self {
+    fn new(kind: Rc<TypeKind>, size: usize) -> Self {
         Self { kind, size }
     }
 
     pub fn new_char() -> Self {
-        Self::new(TypeKind::Char, 1)
+        Self::new(Rc::new(TypeKind::Char), 1)
     }
 
     pub fn new_int() -> Self {
-        // FIXME ここのString::newは消せないのか?
-        Self::new(TypeKind::Int, 8)
+        Self::new(Rc::new(TypeKind::Int), 8)
     }
 
     pub fn pointer_to(base: Rc<Type>) -> Self {
-        Self::new(TypeKind::Ptr(Rc::new((*base).clone())), 8)
+        Self::new(Rc::new(TypeKind::Ptr(Rc::new((*base).clone()))), 8)
     }
 
-    pub fn array_of(base: Type, length: usize) -> Self {
+    pub fn array_of(base: Rc<Type>, length: usize) -> Self {
         let size = base.size * length;
-        let ty = Self::new(
-            TypeKind::Arr {
-                base: Rc::new(base),
-                length,
-            },
-            size,
-        );
+        let ty = Self::new(Rc::new(TypeKind::Arr { base: base, length }), size);
         ty
     }
 
     pub fn new_string(length: usize) -> Self {
-        Self::array_of(Self::new_char(), length)
-    }
-
-    pub fn new_func(kind: TypeKind, params: Vec<FuncParam>) -> Self {
-        Self::new(
-            TypeKind::Func {
-                return_ty: Rc::new(kind),
-                params,
-            },
-            32,
-        )
+        Self::array_of(Rc::new(Self::new_char()), length)
     }
 
     pub fn is_ptr(self) -> bool {
-        match self.kind {
+        match self.kind.as_ref() {
             TypeKind::Ptr(_) | TypeKind::Arr { .. } => true,
             _ => false,
         }
+    }
+
+    pub fn new_func(kind: Rc<TypeKind>, params: Vec<FuncParam>) -> Self {
+        Self::new(
+            Rc::new(TypeKind::Func {
+                return_ty: kind,
+                params,
+            }),
+            32,
+        )
     }
 }

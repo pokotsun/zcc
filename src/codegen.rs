@@ -32,7 +32,7 @@ fn arg_reg64(idx: usize) -> &'static str {
 
 fn load(ty: Type, top: usize) {
     let r = reg(top - 1);
-    match ty.kind {
+    match ty.kind.as_ref() {
         TypeKind::Arr { .. } => {
             // If it is an array, do nothing because in general we can't load
             // an entire array to a register. As a result, the result of an
@@ -54,7 +54,7 @@ fn load(ty: Type, top: usize) {
 fn store(ty: Type, top: usize) -> usize {
     let rd = reg(top - 1);
     let rs = reg(top - 2);
-    match ty.kind {
+    match ty.kind.as_ref() {
         TypeKind::Char => {
             println!("  mov {}b, ({})", rs, rd);
         }
@@ -71,7 +71,7 @@ fn emit_data(prog: &Program) {
         println!("{}:", var.name);
         if let VarType::Global(init_data) = var.var_ty.clone() {
             if init_data.len() > 0 {
-                for s in init_data.iter().rev() {
+                for s in init_data.iter() {
                     println!("  .byte {}", s);
                 }
             } else {
@@ -95,18 +95,13 @@ impl<'a> FuncGenerator<'a> {
 
     fn gen_addr(&mut self, node: &Node, top: usize) -> Result<usize> {
         match &node.kind {
-            NodeKind::Var(var) => {
-                match var.var_ty {
+            NodeKind::Var { var } => {
+                match var.var_ty.clone() {
                     VarType::Local(offset) => {
-                        println!("  lea -{}(%rbp), {}", offset, reg(top));
+                        println!("  lea -{}(%rbp), {}", offset.get(), reg(top));
                     }
                     VarType::Global(_) => {
                         println!("  mov ${}, {}", var.name, reg(top));
-                        // このコンパイラの場合, マイナス方向にデータが生えるため
-                        // 最初のデータまでのoffsetをとってやる
-                        if let TypeKind::Arr { .. } = var.ty.kind {
-                            println!("  add ${}, {}", var.ty.size - 1, reg(top));
-                        }
                     }
                 }
                 Ok(top + 1)
@@ -134,7 +129,7 @@ impl<'a> FuncGenerator<'a> {
                 lhs,
                 rhs,
             } => {
-                if let TypeKind::Arr { .. } = node.get_type().kind {
+                if let TypeKind::Arr { .. } = node.get_type().kind.as_ref() {
                     unimplemented!("array will not be assigned.")
                 }
                 top = self.gen_expr(&*rhs, top)?;
@@ -184,7 +179,7 @@ impl<'a> FuncGenerator<'a> {
                     }
                 }
             }
-            NodeKind::Var(..) => {
+            NodeKind::Var { .. } => {
                 top = self.gen_addr(&node, top).unwrap();
                 load(node.get_type(), top);
             }
@@ -318,21 +313,26 @@ fn emit_text(prog: &Program) -> Result<()> {
         // Prologue %r12-15 are callee-saved registers.
         println!("  push %rbp");
         println!("  mov %rsp, %rbp"); // 現在のrspをrbpにセット
-        println!("  sub ${}, %rsp", func.stack_size); // 関数の
+        println!("  sub ${}, %rsp", func.stack_size); // 関数のスタックサイズ
         println!("  mov %r12, -8(%rbp)");
         println!("  mov %r13, -16(%rbp)");
         println!("  mov %r14, -24(%rbp)");
         println!("  mov %r15, -32(%rbp)");
 
         // Save arguments to the stack
+        let nargs = func.params.len();
         for (i, param) in func.params.iter().enumerate() {
-            if let VarType::Local(offset) = param.var_ty {
-                match param.ty.kind {
+            if let VarType::Local(offset) = param.var_ty.clone() {
+                match param.ty.kind.as_ref() {
                     TypeKind::Char => {
-                        println!("  mov {}, -{}(%rbp)", arg_reg8(i), offset);
+                        println!("  mov {}, -{}(%rbp)", arg_reg8(nargs - i - 1), offset.get());
                     }
                     _ => {
-                        println!("  mov {}, -{}(%rbp)", arg_reg64(i), offset);
+                        println!(
+                            "  mov {}, -{}(%rbp)",
+                            arg_reg64(nargs - i - 1),
+                            offset.get()
+                        );
                     }
                 }
             }

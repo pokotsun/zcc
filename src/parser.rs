@@ -20,24 +20,31 @@ use crate::tokenize::{consume, is_typename, next_equal, skip, Token, TokenKind};
 use crate::types::{FuncParam, Type, TypeKind};
 use crate::util::align_to;
 use crate::{
-    node::{BinOp, Node, NodeKind, UnaryOp, Var},
+    node::{BinOp, Node, NodeKind, UnaryOp, Var, VarType},
     util::LabelCounter,
 };
+use std::collections::VecDeque;
 use std::slice::Iter;
 use std::{iter::Peekable, rc::Rc, unimplemented};
 
 pub struct Function {
     pub name: String,
-    pub params: Vec<Var>,
+    pub params: VecDeque<Rc<Var>>,
     pub body: Node, // Block or statement expression
     #[allow(dead_code)]
-    locals: Vec<Var>, // local variables
+    locals: VecDeque<Rc<Var>>, // local variables
     pub stack_size: usize,
 }
 
 impl Function {
-    fn new(name: String, params: Vec<Var>, body: Node, locals: Vec<Var>) -> Self {
-        let offset = 32 + locals.iter().fold(0, |acc, var| acc + var.ty.size);
+    fn new(name: String, params: VecDeque<Rc<Var>>, body: Node, locals: VecDeque<Rc<Var>>) -> Self {
+        let mut offset = 32;
+        for local in locals.iter() {
+            offset += local.ty.size;
+            if let VarType::Local(var_offset) = local.var_ty.clone() {
+                var_offset.set(offset);
+            }
+        }
         let stack_size = align_to(offset, 16);
 
         Self {
@@ -52,19 +59,20 @@ impl Function {
 
 pub struct Program {
     pub fns: Vec<Function>,
-    pub globals: Vec<Var>,
+    pub globals: VecDeque<Rc<Var>>,
 }
 
 impl Program {
-    fn new(fns: Vec<Function>, globals: Vec<Var>) -> Self {
+    fn new(fns: Vec<Function>, globals: VecDeque<Rc<Var>>) -> Self {
         Self { fns, globals }
     }
 }
 
 pub struct Parser<'a> {
     tok_peek: Peekable<Iter<'a, Token>>,
-    locals: Vec<Var>,
-    globals: Vec<Var>,
+    locals: VecDeque<Rc<Var>>,
+    globals: VecDeque<Rc<Var>>,
+    var_scope: VecDeque<Rc<Var>>,
     scope_depth: usize,
     data_idx: LabelCounter,
 }
@@ -73,8 +81,9 @@ impl<'a> Parser<'a> {
     fn new(tok_peek: Peekable<Iter<'a, Token>>) -> Self {
         Self {
             tok_peek,
-            locals: Vec::new(),
-            globals: Vec::new(),
+            locals: VecDeque::new(),
+            globals: VecDeque::new(),
+            var_scope: VecDeque::new(),
             scope_depth: 0,
             data_idx: LabelCounter::new(),
         }
@@ -85,22 +94,11 @@ impl<'a> Parser<'a> {
         format!(".L.data.{}", idx)
     }
 
-    fn find_var(&self, name: String) -> Option<Var> {
-        // TODO なんか汚いので修正
-        if let Some(x) = self
-            .locals
+    fn find_var(&self, name: String) -> Option<Rc<Var>> {
+        self.var_scope
             .iter()
-            .find(|x| x.name == name)
+            .find(|x| x.name == name && x.scope_depth <= self.scope_depth)
             .map(|var| var.clone())
-        {
-            Some(x)
-        } else {
-            // Global variable
-            self.globals
-                .iter()
-                .find(|x| x.name == name)
-                .map(|x| x.clone())
-        }
     }
 
     fn enter_scope(&mut self) {
@@ -109,13 +107,13 @@ impl<'a> Parser<'a> {
 
     fn leave_scope(&mut self) {
         self.scope_depth -= 1;
-        let mut unscoped_localvars = Vec::new();
-        for local in self.locals.iter() {
-            if local.scope_depth <= self.scope_depth {
-                unscoped_localvars.push(local.clone());
-            }
+        while let Some(_) = self
+            .var_scope
+            .get(0)
+            .filter(|x| x.scope_depth > self.scope_depth)
+        {
+            self.var_scope.pop_front();
         }
-        self.locals = unscoped_localvars;
     }
 
     // program = (funcdef | global-var)*
@@ -128,7 +126,7 @@ impl<'a> Parser<'a> {
             let basety = parser.typespec();
             let (mut ty, mut name) = parser.declarator(basety);
 
-            match ty.kind {
+            match ty.kind.as_ref() {
                 TypeKind::Func { .. } => {
                     let func = parser.typed_funcdef(ty, name);
                     funcs.push(func);
@@ -137,7 +135,9 @@ impl<'a> Parser<'a> {
                     // Global variable
                     loop {
                         let var = Var::new_gvar(name, ty.clone(), Vec::new());
-                        parser.globals.push(var);
+                        let var = Rc::new(var);
+                        parser.var_scope.push_front(var.clone());
+                        parser.globals.push_front(var);
                         if consume(&mut parser.tok_peek, ";") {
                             break;
                         } else {
@@ -168,21 +168,20 @@ impl<'a> Parser<'a> {
     fn typed_funcdef(&mut self, ty: Type, func_name: String) -> Function {
         self.enter_scope();
 
-        let mut var_params = Vec::new();
+        let mut var_params = VecDeque::new();
         if let TypeKind::Func {
             return_ty: _,
             params,
-        } = ty.kind
+        } = ty.kind.as_ref()
         {
             for (ty, var_name) in params.iter() {
-                let var = Var::new_lvar(
-                    var_name.clone(),
-                    Var::calc_offset(&var_params),
-                    ty.clone(),
-                    self.scope_depth,
-                );
-                var_params.push(var.clone());
-                self.locals.push(var.clone());
+                // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
+                // 一旦無効な値0を入れる
+                let var = Var::new_lvar(var_name.clone(), 0, ty.clone(), self.scope_depth);
+                let var = Rc::new(var);
+                var_params.push_front(var.clone());
+                self.var_scope.push_front(var.clone());
+                self.locals.push_front(var);
             }
         }
 
@@ -232,7 +231,8 @@ impl<'a> Parser<'a> {
             skip(&mut self.tok_peek, "[");
             if let Some(size) = self.tok_peek.next().and_then(|tok| tok.get_number()) {
                 skip(&mut self.tok_peek, "]");
-                let ty = Self::type_suffix(self, ty);
+                let ty = self.type_suffix(ty);
+                let ty = Rc::new(ty);
                 return Type::array_of(ty, size as usize);
             } else {
                 unimplemented!("Array length is not specified.");
@@ -257,8 +257,7 @@ impl<'a> Parser<'a> {
 
     // declaration = typespec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
     fn declaration(&mut self) -> Node {
-        // TODO ここも Self::typespecである必要ないのでは?
-        let basety = Self::typespec(self);
+        let basety = self.typespec();
 
         let mut is_already_declared = false;
         let mut nodes = Vec::new();
@@ -269,18 +268,18 @@ impl<'a> Parser<'a> {
             is_already_declared = true;
 
             let (ty, name) = Self::declarator(self, basety.clone());
-            let var = Var::new_lvar(
-                name,
-                Var::calc_offset(&self.locals),
-                ty.clone(),
-                self.scope_depth,
-            );
-            self.locals.push(var.clone());
+            // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
+            // 一旦無効な値0を入れる
+            let var = Var::new_lvar(name, 0, ty.clone(), self.scope_depth);
+            let var = Rc::new(var);
+            let rcvar = var.clone();
+            self.var_scope.push_front(var.clone());
+            self.locals.push_front(var);
 
             if !next_equal(&mut self.tok_peek, "=") {
                 continue;
             }
-            let lhs = Node::new_var_node(var);
+            let lhs = Node::new_var_node(rcvar);
             self.tok_peek.next(); // "=" tokenを飛ばす
             let rhs = Self::assign(self);
             let node = Node::new_bin(BinOp::Assign, lhs, rhs);
@@ -311,11 +310,16 @@ impl<'a> Parser<'a> {
             let cond = Self::expr(self);
             skip(&mut self.tok_peek, ")");
             let then = Self::stmt(self);
-            let next_tok = self.tok_peek.peek().map(|x| (*x).clone()); // 実体のコピー
-            let els = next_tok.filter(|tok| tok.equal("else")).map(|_| {
-                self.tok_peek.next();
-                Self::stmt(self)
-            });
+
+            let els = self
+                .tok_peek
+                .peek()
+                .and_then(|next_tok| Some(next_tok.clone()))
+                .filter(|next_tok| next_tok.equal("else"))
+                .map(|_| {
+                    self.tok_peek.next();
+                    self.stmt()
+                });
             return Node::new_if(cond, then, els);
         }
 
@@ -359,7 +363,7 @@ impl<'a> Parser<'a> {
 
     // compound-stmt = (declaration | stmt)* "}"
     fn compound_stmt(&mut self) -> Node {
-        let mut nodes = Vec::new();
+        let mut nodes = vec![];
 
         self.enter_scope();
 
@@ -467,7 +471,7 @@ impl<'a> Parser<'a> {
 
     // add = mul ("+" mul | "-" mul)*
     fn add(&mut self) -> Node {
-        let mut node = Self::mul(self);
+        let mut node = self.mul();
         loop {
             let tok = self.tok_peek.peek().unwrap();
             if tok.equal("+") {
@@ -488,7 +492,7 @@ impl<'a> Parser<'a> {
 
     // mul = unary ("*" unary | "/" unary)*
     fn mul(&mut self) -> Node {
-        let mut node = Self::unary(self);
+        let mut node = self.unary();
 
         loop {
             let tok = self.tok_peek.peek().unwrap();
@@ -535,7 +539,7 @@ impl<'a> Parser<'a> {
 
     // postfix = primary ("[" expr "]")
     fn postfix(&mut self) -> Node {
-        let mut node = Self::primary(self);
+        let mut node = self.primary();
 
         while next_equal(&mut self.tok_peek, "[") {
             skip(&mut self.tok_peek, "[");
@@ -611,8 +615,11 @@ impl<'a> Parser<'a> {
             TokenKind::Str(words) => {
                 let name = self.new_unique_name();
                 let gvar = Var::new_string_literal(name, words.clone());
-                self.globals.push(gvar.clone());
-                Node::new_var_node(gvar)
+                let gvar = Rc::new(gvar);
+                let rgvar = gvar.clone();
+                self.var_scope.push_front(gvar.clone());
+                self.globals.push_front(gvar);
+                Node::new_var_node(rgvar)
             }
             _ => {
                 // TODO ここの処理をもう少し綺麗にする

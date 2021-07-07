@@ -1,6 +1,5 @@
 CFLAGS=-std=c11 -g -static -fno-common
-
-all: zcc test
+all: clean zcc test
 
 zcc: clean
 	cargo build

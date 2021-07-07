@@ -1,4 +1,5 @@
 use crate::types::{Type, TypeKind};
+use std::cell::Cell;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -32,7 +33,9 @@ pub enum NodeKind {
         lhs: Box<Node>, // Left-hand side
         rhs: Box<Node>, // Right-hand side
     },
-    Var(Var),
+    Var {
+        var: Rc<Var>,
+    },
     // if statement
     If {
         cond: Box<Node>,
@@ -61,8 +64,8 @@ pub enum NodeKind {
 // Variable
 #[derive(Clone, Debug)]
 pub enum VarType {
-    Local(usize),        // Offset from RBP
-    Global(Vec<String>), // initdata
+    Local(Rc<Cell<usize>>), // Offset from RBP
+    Global(Vec<String>),    // initdata
 }
 
 #[derive(Clone, Debug)]
@@ -78,7 +81,7 @@ impl Var {
         Var {
             name,
             ty,
-            var_ty: VarType::Local(offset),
+            var_ty: VarType::Local(Rc::new(Cell::new(offset))),
             scope_depth,
         }
     }
@@ -96,11 +99,6 @@ impl Var {
         let ty = Type::new_string(init_data.len());
         Var::new_gvar(name, ty, init_data)
     }
-
-    // 変数間のoffsetを計算するUtil関数 将来的に消す
-    pub fn calc_offset(locals: &Vec<Var>) -> usize {
-        32 + locals.iter().fold(0, |acc, var| acc + var.ty.size)
-    }
 }
 
 // AST node type
@@ -117,12 +115,12 @@ impl Node {
     pub fn get_type(&self) -> Type {
         match &self.kind {
             NodeKind::Unary(op, child) => match op {
-                UnaryOp::Addr => match child.get_type().kind {
-                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base),
+                UnaryOp::Addr => match child.get_type().kind.as_ref() {
+                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base.clone()),
                     _ => Type::pointer_to(Rc::new(child.get_type())),
                 },
-                UnaryOp::Deref => match child.get_type().kind {
-                    TypeKind::Arr { base, .. } => (*base).clone(),
+                UnaryOp::Deref => match child.get_type().kind.as_ref() {
+                    TypeKind::Arr { base, .. } => (*base.as_ref()).clone(),
                     _ => child.get_type(),
                 },
                 UnaryOp::StmtExpr => {
@@ -141,7 +139,7 @@ impl Node {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Assign => lhs.get_type(),
                 BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => Type::new_int(),
             },
-            NodeKind::Var(var) => var.ty.clone(),
+            NodeKind::Var { var } => var.ty.clone(),
             NodeKind::Num(_) | NodeKind::FunCall { .. } => Type::new_int(),
             _ => unreachable!(),
         }
@@ -165,12 +163,12 @@ impl Node {
         match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
             // pointer + num
             (true, false) => {
-                let lhs_size = match lhs.get_type().kind {
+                let lhs_size = match lhs.get_type().kind.as_ref() {
                     TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.size,
                     _ => unimplemented!("undefined internal type on ptr add"),
                 };
                 Self::new_bin(
-                    BinOp::Sub,
+                    BinOp::Add,
                     lhs,
                     Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(lhs_size as i64)), rhs),
                 )
@@ -188,23 +186,21 @@ impl Node {
         match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
             // pointer - num
             (true, false) => {
-                let lhs_size = match lhs.get_type().kind {
+                let lhs_size = match lhs.get_type().kind.as_ref() {
                     TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.size,
                     _ => unimplemented!("undefined internal type on ptr sub"),
                 };
                 Self::new_bin(
-                    BinOp::Add,
+                    BinOp::Sub,
                     lhs,
                     Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(lhs_size as i64)), rhs),
                 )
             }
             // pointer - pointer, which returns how many elements are between the two.
-            // 変数スタックはマイナス方向に伸びるため(ex. int x, y -> &x=-8, &y=-16),
-            // &x-&yしてやると差分のポインタが得られる
-            (true, true) => Self::new_bin(
+            (true, true) => Node::new_bin(
                 BinOp::Div,
-                Self::new_bin(BinOp::Sub, rhs, lhs),
-                Self::new(NodeKind::Num(8)),
+                Node::new_bin(BinOp::Sub, lhs, rhs),
+                Node::new(NodeKind::Num(8)),
             ),
             // num - num
             (false, false) => Self::new_bin(BinOp::Sub, lhs, rhs),
@@ -240,8 +236,8 @@ impl Node {
         Self::new(kind)
     }
 
-    pub fn new_var_node(var: Var) -> Self {
-        let kind = NodeKind::Var(var);
+    pub fn new_var_node(var: Rc<Var>) -> Self {
+        let kind = NodeKind::Var { var };
         Self::new(kind)
     }
 
