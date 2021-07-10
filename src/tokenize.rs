@@ -21,15 +21,23 @@ pub enum TokenKind {
 pub struct Token {
     pub kind: TokenKind, // Token kind
     loc: usize,          // Token location
+    line_no: usize,      // Line Number
     line: Rc<String>,    // Line which exists token
     pub word: String,    // Token word
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, loc: usize, line: Rc<String>, word: String) -> Self {
+    pub fn new(
+        kind: TokenKind,
+        loc: usize,
+        line_no: usize,
+        line: Rc<String>,
+        word: String,
+    ) -> Self {
         Token {
             kind,
             loc,
+            line_no,
             line,
             word,
         }
@@ -171,8 +179,10 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
     let line = Rc::new(line);
     let mut chars_peek = multipeek(line.chars().enumerate());
     let mut tokens = Vec::new();
+    let mut line_no: usize = 1;
+    let mut pre_enter_loc: usize = 0;
 
-    while let Some((i, ch)) = chars_peek.peek().cloned() {
+    while let Some((loc, ch)) = chars_peek.peek().cloned() {
         chars_peek.reset_peek();
 
         if startswith(&mut chars_peek, "//") {
@@ -207,11 +217,23 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 let token = match chars_peek.peek() {
                     Some((_, '=')) => {
                         chars_peek.next();
-                        Token::new(TokenKind::Reserved, i, line.clone(), "==".to_string())
+                        Token::new(
+                            TokenKind::Reserved,
+                            loc - pre_enter_loc,
+                            line_no,
+                            line.clone(),
+                            "==".to_string(),
+                        )
                     }
                     _ => {
                         chars_peek.reset_peek();
-                        Token::new(TokenKind::Reserved, i, line.clone(), "=".to_string())
+                        Token::new(
+                            TokenKind::Reserved,
+                            loc - pre_enter_loc,
+                            line_no,
+                            line.clone(),
+                            "=".to_string(),
+                        )
                     }
                 };
                 tokens.push(token);
@@ -220,22 +242,40 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 chars_peek.next();
                 if let Some((_, '=')) = chars_peek.peek() {
                     chars_peek.next();
-                    let token = Token::new(TokenKind::Reserved, i, line.clone(), "!=".to_string());
+                    let token = Token::new(
+                        TokenKind::Reserved,
+                        loc - pre_enter_loc,
+                        line_no,
+                        line.clone(),
+                        "!=".to_string(),
+                    );
                     tokens.push(token);
                     continue;
                 }
-                error_at(i, &line, "invalid token start with !.");
+                error_at(loc, &line, "invalid token start with !.");
             }
             '<' => {
                 chars_peek.next();
                 let token = match chars_peek.peek() {
                     Some((_, '=')) => {
                         chars_peek.next();
-                        Token::new(TokenKind::Reserved, i, line.clone(), "<=".to_string())
+                        Token::new(
+                            TokenKind::Reserved,
+                            loc - pre_enter_loc,
+                            line_no,
+                            line.clone(),
+                            "<=".to_string(),
+                        )
                     }
                     _ => {
                         chars_peek.reset_peek();
-                        Token::new(TokenKind::Reserved, i, line.clone(), "<".to_string())
+                        Token::new(
+                            TokenKind::Reserved,
+                            loc - pre_enter_loc,
+                            line_no,
+                            line.clone(),
+                            "<".to_string(),
+                        )
                     }
                 };
                 tokens.push(token);
@@ -245,11 +285,23 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 let token = match chars_peek.peek() {
                     Some((_, '=')) => {
                         chars_peek.next();
-                        Token::new(TokenKind::Reserved, i, line.clone(), ">=".to_string())
+                        Token::new(
+                            TokenKind::Reserved,
+                            loc - pre_enter_loc,
+                            line_no,
+                            line.clone(),
+                            ">=".to_string(),
+                        )
                     }
                     _ => {
                         chars_peek.reset_peek();
-                        Token::new(TokenKind::Reserved, i, line.clone(), ">".to_string())
+                        Token::new(
+                            TokenKind::Reserved,
+                            loc - pre_enter_loc,
+                            line_no,
+                            line.clone(),
+                            ">".to_string(),
+                        )
                     }
                 };
                 tokens.push(token);
@@ -272,13 +324,25 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 } else {
                     TokenKind::Ident(ident.clone())
                 };
-                let token = Token::new(kind, i, line.clone(), ident.clone());
+                let token = Token::new(
+                    kind,
+                    loc - pre_enter_loc,
+                    line_no,
+                    line.clone(),
+                    ident.clone(),
+                );
                 tokens.push(token);
             }
             '0'..='9' => {
                 chars_peek.reset_peek();
                 let num = strtol(&mut chars_peek);
-                let token = Token::new(TokenKind::Num(num), i, line.clone(), num.to_string());
+                let token = Token::new(
+                    TokenKind::Num(num),
+                    loc - pre_enter_loc,
+                    line_no,
+                    line.clone(),
+                    num.to_string(),
+                );
                 tokens.push(token);
             }
             // String literal
@@ -286,20 +350,34 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 chars_peek.next();
                 let strings = read_string_literal(&mut chars_peek);
                 let word = strings.join("");
-                let token = Token::new(TokenKind::Str(strings), i, line.clone(), word);
+                let token = Token::new(
+                    TokenKind::Str(strings),
+                    loc - pre_enter_loc,
+                    line_no,
+                    line.clone(),
+                    word,
+                );
                 tokens.push(token);
             }
             // Punctuator
             '+' | '-' | '*' | '/' | '(' | ')' | ',' | ';' | '{' | '}' | '[' | ']' | '&' => {
                 chars_peek.next();
-                let token = Token::new(TokenKind::Reserved, i, line.clone(), ch.to_string());
+                let token = Token::new(
+                    TokenKind::Reserved,
+                    loc - pre_enter_loc,
+                    line_no,
+                    line.clone(),
+                    ch.to_string(),
+                );
                 tokens.push(token);
             }
             '\n' => {
+                pre_enter_loc = loc;
+                line_no += 1;
                 chars_peek.next();
             }
             _ => {
-                return Err(error_at(i, &line, &format!("invalid token: {}", ch)));
+                return Err(error_at(loc, &line, &format!("invalid token: {}", ch)));
             }
         }
     }
