@@ -22,6 +22,7 @@ pub enum BinOp {
     Lt,     // <
     Le,     // <=
     Assign, // = variable assign
+    Comma,  // ,
 }
 
 #[derive(Debug)]
@@ -135,9 +136,14 @@ impl Node {
                 }
                 _ => unreachable!(),
             },
-            NodeKind::Bin { op: binop, lhs, .. } => match binop {
+            NodeKind::Bin {
+                op: binop,
+                lhs,
+                rhs,
+            } => match binop {
                 BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Assign => lhs.get_type(),
                 BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => Type::new_int(),
+                BinOp::Comma => rhs.get_type(),
             },
             NodeKind::Var { var } => var.ty.clone(),
             NodeKind::Num(_) | NodeKind::FunCall { .. } => Type::new_int(),

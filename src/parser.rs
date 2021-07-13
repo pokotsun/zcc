@@ -396,9 +396,14 @@ impl<'a> Parser<'a> {
         return node;
     }
 
-    // expr = assign
+    // expr = assign ("," expr)?
     fn expr(&mut self) -> Node {
-        Self::assign(self)
+        let node = self.assign();
+        while next_equal(&mut self.tok_peek, ",") {
+            self.tok_peek.next();
+            return Node::new_bin(BinOp::Comma, node, self.expr());
+        }
+        node
     }
 
     // assign = equality ("=" assign)?

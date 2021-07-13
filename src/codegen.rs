@@ -110,6 +110,15 @@ impl<'a> FuncGenerator<'a> {
                 let top = self.gen_expr(child, top);
                 top
             }
+            NodeKind::Bin {
+                op: BinOp::Comma,
+                lhs,
+                rhs,
+            } => {
+                let mut top = self.gen_expr(lhs, top)?;
+                top -= 1;
+                self.gen_addr(rhs, top)
+            }
             _ => {
                 let msg = format!("NodeKind is Invalid: {:?}, expected Var", node);
                 Err(anyhow!(msg))
@@ -135,6 +144,15 @@ impl<'a> FuncGenerator<'a> {
                 top = self.gen_expr(&*rhs, top)?;
                 top = self.gen_addr(&*lhs, top).unwrap();
                 top = store(node.get_type(), top);
+            }
+            NodeKind::Bin {
+                op: BinOp::Comma,
+                lhs,
+                rhs,
+            } => {
+                let mut top = self.gen_expr(lhs, top)?;
+                top -= 1;
+                return self.gen_expr(rhs, top);
             }
             NodeKind::Bin { op, lhs, rhs } => {
                 top = self.gen_expr(&*lhs, top)?;
@@ -341,7 +359,6 @@ fn emit_text(prog: &Program) -> Result<()> {
         let mut fn_gen = FuncGenerator::new(func, &mut org_label_counter);
 
         // Emit code
-        // if let Err(msg) = gen_stmt(&func.body, &mut label_counter, &func, 0) {
         if let Err(msg) = fn_gen.gen_stmt(&fn_gen.func.body, 0) {
             return Err(anyhow!(msg));
         }
