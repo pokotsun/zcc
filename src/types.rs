@@ -58,7 +58,7 @@ impl Type {
         Self::array_of(Rc::new(Self::new_char()), length)
     }
 
-    pub fn is_ptr(self) -> bool {
+    pub fn is_ptr(&self) -> bool {
         match self.kind.as_ref() {
             TypeKind::Ptr(_) | TypeKind::Arr { .. } => true,
             _ => false,

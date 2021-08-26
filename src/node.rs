@@ -58,8 +58,9 @@ pub enum NodeKind {
     Block(Vec<Node>), // { ... }
     FunCall {
         name: String,
-        args: Vec<Node>,
+        args: Vec<Rc<Var>>,
     }, // Function call
+    NullExpr,         // Do nothing
 }
 
 // Variable

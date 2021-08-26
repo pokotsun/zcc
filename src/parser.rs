@@ -557,22 +557,40 @@ impl<'a> Parser<'a> {
     }
 
     // funcall = ident "(" (assign (",", assign)*)? ")"
+    //
+    // foo(a,b,c) is compiled to (t1=a, t2=b, t3=c, foo(t1, t2, t3))
+    // where t1, t2 and t3 are fresh temporal local variables
     fn funcall(&mut self, func_name: String) -> Node {
         skip(&mut self.tok_peek, "(");
 
+        let mut node = Node::new(NodeKind::NullExpr);
         let mut args = Vec::new();
         while !next_equal(&mut self.tok_peek, ")") {
             if args.len() > 0 {
                 skip(&mut self.tok_peek, ",");
             }
             let arg = Self::assign(self);
-            args.push(arg);
+            let mut base = arg.get_type();
+
+            if base.is_ptr() {
+                base = Type::pointer_to(Rc::new(base));
+            }
+
+            let var = Var::new_lvar("".to_string(), 0, base, self.scope_depth);
+            let var = Rc::new(var);
+            let expr = Node::new_bin(BinOp::Assign, Node::new_var_node(var.clone()), arg);
+            args.push(var.clone());
+            self.locals.push_front(var);
+            node = Node::new_bin(BinOp::Comma, node, expr);
         }
+
         skip(&mut self.tok_peek, ")");
-        Node::new(NodeKind::FunCall {
+
+        let funcall = Node::new(NodeKind::FunCall {
             name: func_name.to_string(),
             args,
-        })
+        });
+        Node::new_bin(BinOp::Comma, node, funcall)
     }
 
     // primary = "(" "{" stmt stmt* "}" ")"

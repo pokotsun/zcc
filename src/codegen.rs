@@ -218,22 +218,32 @@ impl<'a> FuncGenerator<'a> {
             }
             NodeKind::FunCall { name, args } => {
                 let nargs = args.len();
-                args.iter()
-                    .for_each(|arg| top = self.gen_expr(arg, top).unwrap());
 
-                for i in 1..=nargs {
-                    top -= 1;
-                    println!("  mov {}, {}", reg(top), arg_reg64(nargs - i));
-                }
-
-                // 何故reg11もpushする必要がある?
+                // save caller-saved registers
+                // NOTE なぜここでcaller-saved registerというものがでてくるのか不思議
                 println!("  push %r10");
                 println!("  push %r11");
+                // FIXME if letしすぎ
+                for i in 0..nargs {
+                    let arg = args.get(i).unwrap();
+
+                    if let VarType::Local(offset) = &arg.var_ty {
+                        if arg.ty.size == 1 {
+                            println!("  movsbq -{}(%rbp), {}", offset.get(), arg_reg64(i));
+                        } else {
+                            println!("  mov -{}(%rbp), {}", offset.get(), arg_reg64(i));
+                        }
+                    }
+                }
+
                 println!("  mov $0, %rax");
                 println!("  call {}", name);
                 println!("  pop %r11");
                 println!("  pop %r10");
                 println!("  mov %rax, {}", reg(top));
+                top += 1;
+            }
+            NodeKind::NullExpr => {
                 top += 1;
             }
             _ => {
