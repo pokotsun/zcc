@@ -64,14 +64,14 @@ impl Token {
 
 fn is_keyword(target: &str) -> bool {
     let keywords = [
-        "return", "if", "else", "for", "while", "char", "int", "sizeof",
+        "return", "if", "else", "for", "while", "char", "int", "sizeof", "struct",
     ];
     keywords.iter().any(|keyword| target == *keyword)
 }
 
 pub fn is_typename(tok_peek: &mut Peekable<Iter<Token>>) -> bool {
     // REVIEW: このtype情報はどこかにまとめられないか
-    let types = ["char", "int"];
+    let types = ["char", "int", "struct"];
     types.iter().any(|s| next_equal(tok_peek, s))
 }
 
@@ -360,7 +360,7 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
                 tokens.push(token);
             }
             // Punctuator
-            '+' | '-' | '*' | '/' | '(' | ')' | ',' | ';' | '{' | '}' | '[' | ']' | '&' => {
+            '+' | '-' | '*' | '/' | '(' | ')' | ',' | ';' | '{' | '}' | '[' | ']' | '&' | '.' => {
                 chars_peek.next();
                 let token = Token::new(
                     TokenKind::Reserved,

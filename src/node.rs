@@ -9,6 +9,7 @@ pub enum UnaryOp {
     Return,
     Addr,
     Deref,
+    Member(Member),
 }
 
 #[derive(Debug)]
@@ -36,6 +37,9 @@ pub enum NodeKind {
     },
     Var {
         var: Rc<Var>,
+    },
+    Struct {
+        members: Vec<Member>,
     },
     // if statement
     If {
@@ -102,6 +106,22 @@ impl Var {
         Var::new_gvar(name, ty, init_data)
     }
 }
+#[derive(Debug, Clone)]
+pub struct Member {
+    pub ty: Type,
+    pub name: String,
+    pub offset: Cell<usize>,
+}
+
+impl Member {
+    pub fn new(ty: Type, name: String, offset: usize) -> Self {
+        Self {
+            ty,
+            name,
+            offset: Cell::new(offset),
+        }
+    }
+}
 
 // AST node type
 #[derive(Debug)]
@@ -122,8 +142,8 @@ impl Node {
                     _ => Type::pointer_to(Rc::new(child.get_type())),
                 },
                 UnaryOp::Deref => match child.get_type().kind.as_ref() {
-                    TypeKind::Arr { base, .. } => (*base.as_ref()).clone(),
-                    _ => child.get_type(),
+                    TypeKind::Arr { base, .. } | TypeKind::Ptr(base) => (*base.as_ref()).clone(),
+                    _ => unimplemented!("invalid pointer dereference"),
                 },
                 UnaryOp::StmtExpr => {
                     if let NodeKind::Block(nodes) = &child.kind {
@@ -135,6 +155,7 @@ impl Node {
                     }
                     unimplemented!("statement expression returning void is not supported");
                 }
+                UnaryOp::Member(member) => member.ty.clone(),
                 _ => unreachable!(),
             },
             NodeKind::Bin {
@@ -148,7 +169,7 @@ impl Node {
             },
             NodeKind::Var { var } => var.ty.clone(),
             NodeKind::Num(_) | NodeKind::FunCall { .. } => Type::new_int(),
-            _ => unreachable!(),
+            _ => unreachable!("\n{:#?}", self),
         }
     }
 
@@ -177,7 +198,7 @@ impl Node {
                 Self::new_bin(
                     BinOp::Add,
                     lhs,
-                    Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(lhs_size as i64)), rhs),
+                    Self::new_bin(BinOp::Mul, rhs, Self::new(NodeKind::Num(lhs_size as i64))),
                 )
             }
             // num + pointer

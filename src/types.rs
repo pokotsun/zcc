@@ -1,3 +1,4 @@
+use crate::node::Member;
 use std::rc::Rc;
 
 pub type FuncParam = (Type, String);
@@ -14,6 +15,9 @@ pub enum TypeKind {
     Arr {
         base: Rc<Type>,
         length: usize,
+    },
+    Struct {
+        members: Vec<Member>,
     },
 }
 
@@ -56,6 +60,10 @@ impl Type {
 
     pub fn new_string(length: usize) -> Self {
         Self::array_of(Rc::new(Self::new_char()), length)
+    }
+
+    pub fn new_struct(members: Vec<Member>, size: usize) -> Self {
+        Self::new(Rc::new(TypeKind::Struct { members }), size)
     }
 
     pub fn is_ptr(&self) -> bool {

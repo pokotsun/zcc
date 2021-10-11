@@ -106,6 +106,11 @@ impl<'a> FuncGenerator<'a> {
                 }
                 Ok(top + 1)
             }
+            NodeKind::Unary(UnaryOp::Member(member), child) => {
+                let top = self.gen_addr(child, top)?;
+                println!("  add ${}, {}", member.offset.get(), reg(top - 1));
+                Ok(top)
+            }
             NodeKind::Unary(UnaryOp::Deref, child) => {
                 let top = self.gen_expr(child, top);
                 top
@@ -142,7 +147,7 @@ impl<'a> FuncGenerator<'a> {
                     unimplemented!("array will not be assigned.")
                 }
                 top = self.gen_expr(&*rhs, top)?;
-                top = self.gen_addr(&*lhs, top).unwrap();
+                top = self.gen_addr(&*lhs, top)?;
                 top = store(node.get_type(), top);
             }
             NodeKind::Bin {
@@ -197,8 +202,8 @@ impl<'a> FuncGenerator<'a> {
                     }
                 }
             }
-            NodeKind::Var { .. } => {
-                top = self.gen_addr(&node, top).unwrap();
+            NodeKind::Var { .. } | NodeKind::Unary(UnaryOp::Member(..), ..) => {
+                top = self.gen_addr(&node, top)?;
                 load(node.get_type(), top);
             }
             NodeKind::Unary(UnaryOp::Deref, child) => {
@@ -206,7 +211,7 @@ impl<'a> FuncGenerator<'a> {
                 load(node.get_type(), top);
             }
             NodeKind::Unary(UnaryOp::Addr, child) => {
-                top = self.gen_addr(child, top).unwrap();
+                top = self.gen_addr(child, top)?;
             }
             NodeKind::Unary(UnaryOp::StmtExpr, child) => {
                 if let NodeKind::Block(nodes) = &child.kind {

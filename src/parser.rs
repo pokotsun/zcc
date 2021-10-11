@@ -20,7 +20,7 @@ use crate::tokenize::{consume, is_typename, next_equal, skip, Token, TokenKind};
 use crate::types::{FuncParam, Type, TypeKind};
 use crate::util::align_to;
 use crate::{
-    node::{BinOp, Node, NodeKind, UnaryOp, Var, VarType},
+    node::{BinOp, Member, Node, NodeKind, UnaryOp, Var, VarType},
     util::LabelCounter,
 };
 use std::collections::VecDeque;
@@ -192,14 +192,21 @@ impl<'a> Parser<'a> {
         Function::new(func_name, var_params, body, self.locals.clone())
     }
 
-    // typespec = "char" | "int"
+    // typespec = "char" | "int" | struct-decl
     fn typespec(&mut self) -> Type {
         if next_equal(&mut self.tok_peek, "char") {
             skip(&mut self.tok_peek, "char");
             return Type::new_char();
         }
-        skip(&mut self.tok_peek, "int");
-        Type::new_int()
+        if next_equal(&mut self.tok_peek, "int") {
+            skip(&mut self.tok_peek, "int");
+            return Type::new_int();
+        }
+        if next_equal(&mut self.tok_peek, "struct") {
+            skip(&mut self.tok_peek, "struct");
+            return self.struct_decl();
+        }
+        unimplemented!("Undefined typespec: {}", self.tok_peek.next().unwrap().word);
     }
 
     // func-params = (param ("," param)*)? ")"
@@ -542,18 +549,84 @@ impl<'a> Parser<'a> {
         return Self::postfix(self);
     }
 
-    // postfix = primary ("[" expr "]")
+    // struct-members = (typespec declarator ("," declarator)* ";")*
+    fn struct_members(&mut self) -> Vec<Member> {
+        let mut members = Vec::new();
+        while !next_equal(&mut self.tok_peek, "}") {
+            let basety = self.typespec();
+            let mut is_first_member = true;
+
+            while !consume(&mut self.tok_peek, ";") {
+                if !is_first_member {
+                    skip(&mut self.tok_peek, ",");
+                }
+                is_first_member = false;
+
+                let (ty, name) = self.declarator(basety.clone());
+                // とりあえずoffsetには適当な値を入れておく
+                // TODO ここはその場でoffsetを入れられそう
+                let member = Member::new(ty, name, 0);
+                members.push(member);
+            }
+        }
+        skip(&mut self.tok_peek, "}");
+        members
+    }
+
+    // struct-decl = "{" struct-members
+    fn struct_decl(&mut self) -> Type {
+        skip(&mut self.tok_peek, "{");
+
+        // Construct a struct object.
+        let members = self.struct_members();
+
+        let mut offset: usize = 0;
+        members.iter().for_each(|member| {
+            member.offset.set(offset);
+            offset += member.ty.size;
+        });
+        Type::new_struct(members, offset)
+    }
+
+    // TODO この2つの関数はparserの中に無くても良いかも
+    fn get_struct_member(members: Vec<Member>, member_name: String) -> Member {
+        members
+            .iter()
+            .find(|x| x.name == member_name)
+            .expect("no such member.")
+            .clone()
+    }
+
+    fn struct_ref(node: Node, member_name: String) -> Node {
+        if let TypeKind::Struct { members } = node.get_type().kind.as_ref().clone() {
+            let member = Self::get_struct_member(members, member_name);
+            return Node::new_unary(UnaryOp::Member(member), node);
+        }
+        unimplemented!("struct_ref is not struct:\n{:#?}", node);
+    }
+
+    // postfix = primary ("[" expr "]" | "." ident)*
     fn postfix(&mut self) -> Node {
         let mut node = self.primary();
 
-        while next_equal(&mut self.tok_peek, "[") {
-            skip(&mut self.tok_peek, "[");
-            // x[idx] is *(x + idx)
-            let idx = Self::expr(self);
-            skip(&mut self.tok_peek, "]");
-            node = Node::new_unary(UnaryOp::Deref, Node::new_add(node, idx));
+        loop {
+            if next_equal(&mut self.tok_peek, "[") {
+                skip(&mut self.tok_peek, "[");
+                // x[idx] is *(x + idx)
+                let idx = Self::expr(self);
+                skip(&mut self.tok_peek, "]");
+                node = Node::new_unary(UnaryOp::Deref, Node::new_add(node, idx));
+                continue;
+            }
+            if next_equal(&mut self.tok_peek, ".") {
+                skip(&mut self.tok_peek, ".");
+                let tok = self.tok_peek.next().unwrap();
+                let member_name = tok.word.clone();
+                node = Self::struct_ref(node, member_name);
+                continue;
+            }
+            return node;
         }
-        node
     }
 
     // funcall = ident "(" (assign (",", assign)*)? ")"
