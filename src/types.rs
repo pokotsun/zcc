@@ -25,36 +25,38 @@ pub enum TypeKind {
 pub struct Type {
     pub kind: Rc<TypeKind>,
     pub size: usize, // sizeof() value
-                     // Pointer-to or array-of type. We intentionally use the same member
-                     // to represent pointer/array duality in C.
-                     //
-                     // In many contexts in which a pointer is expected, we examine this
-                     // member instead of "kind" member to determine whether a type is a
-                     // pointer or not. That means in many contexts "array of T" is
-                     // naturally handled as if it were "pointer to T", as required by
-                     // the C spec.
+    // Pointer-to or array-of type. We intentionally use the same member
+    // to represent pointer/array duality in C.
+    //
+    // In many contexts in which a pointer is expected, we examine this
+    // member instead of "kind" member to determine whether a type is a
+    // pointer or not. That means in many contexts "array of T" is
+    // naturally handled as if it were "pointer to T", as required by
+    // the C spec.
+    pub align: usize,
 }
 
 impl Type {
-    fn new(kind: Rc<TypeKind>, size: usize) -> Self {
-        Self { kind, size }
+    fn new(kind: Rc<TypeKind>, size: usize, align: usize) -> Self {
+        Self { kind, size, align }
     }
 
     pub fn new_char() -> Self {
-        Self::new(Rc::new(TypeKind::Char), 1)
+        Self::new(Rc::new(TypeKind::Char), 1, 1)
     }
 
     pub fn new_int() -> Self {
-        Self::new(Rc::new(TypeKind::Int), 8)
+        Self::new(Rc::new(TypeKind::Int), 8, 8)
     }
 
     pub fn pointer_to(base: Rc<Type>) -> Self {
-        Self::new(Rc::new(TypeKind::Ptr(Rc::new((*base).clone()))), 8)
+        Self::new(Rc::new(TypeKind::Ptr(Rc::new((*base).clone()))), 8, 8)
     }
 
     pub fn array_of(base: Rc<Type>, length: usize) -> Self {
         let size = base.size * length;
-        let ty = Self::new(Rc::new(TypeKind::Arr { base: base, length }), size);
+        let align = base.align;
+        let ty = Self::new(Rc::new(TypeKind::Arr { base: base, length }), size, align);
         ty
     }
 
@@ -62,8 +64,8 @@ impl Type {
         Self::array_of(Rc::new(Self::new_char()), length)
     }
 
-    pub fn new_struct(members: Vec<Member>, size: usize) -> Self {
-        Self::new(Rc::new(TypeKind::Struct { members }), size)
+    pub fn new_struct(members: Vec<Member>, size: usize, align: usize) -> Self {
+        Self::new(Rc::new(TypeKind::Struct { members }), size, align)
     }
 
     pub fn is_ptr(&self) -> bool {
@@ -80,6 +82,7 @@ impl Type {
                 params,
             }),
             32,
+            32, // TODO 要検討
         )
     }
 }

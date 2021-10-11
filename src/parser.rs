@@ -582,10 +582,15 @@ impl<'a> Parser<'a> {
 
         let mut offset: usize = 0;
         members.iter().for_each(|member| {
+            offset = align_to(offset, member.ty.align);
             member.offset.set(offset);
             offset += member.ty.size;
         });
-        Type::new_struct(members, offset)
+        let struct_align = members
+            .iter()
+            .max_by_key(|member| member.ty.align)
+            .map_or(0, |x| x.ty.align);
+        Type::new_struct(members, align_to(offset, struct_align), struct_align)
     }
 
     // TODO この2つの関数はparserの中に無くても良いかも
