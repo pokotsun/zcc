@@ -40,6 +40,7 @@ impl Function {
     fn new(name: String, params: VecDeque<Rc<Var>>, body: Node, locals: VecDeque<Rc<Var>>) -> Self {
         let mut offset = 32;
         for local in locals.iter() {
+            offset = align_to(offset, local.ty.align);
             offset += local.ty.size;
             if let VarType::Local(var_offset) = local.var_ty.clone() {
                 var_offset.set(offset);

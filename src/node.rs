@@ -28,6 +28,7 @@ pub enum BinOp {
 
 #[derive(Debug)]
 pub enum NodeKind {
+    // FIXME usizeでも良かったかも
     Num(i64), // Integer
     Unary(UnaryOp, Box<Node>),
     Bin {
@@ -225,11 +226,17 @@ impl Node {
                 )
             }
             // pointer - pointer, which returns how many elements are between the two.
-            (true, true) => Node::new_bin(
-                BinOp::Div,
-                Node::new_bin(BinOp::Sub, lhs, rhs),
-                Node::new(NodeKind::Num(8)),
-            ),
+            (true, true) => {
+                let lhs_size = match lhs.get_type().kind.as_ref() {
+                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.size,
+                    _ => unimplemented!("undefined internal type on ptr - ptr sub"),
+                };
+                Node::new_bin(
+                    BinOp::Div,
+                    Node::new_bin(BinOp::Sub, lhs, rhs),
+                    Node::new(NodeKind::Num(lhs_size as i64)),
+                )
+            }
             // num - num
             (false, false) => Self::new_bin(BinOp::Sub, lhs, rhs),
             // num - pointer
