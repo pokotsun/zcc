@@ -47,9 +47,9 @@ impl Token {
         self.word == s.to_string()
     }
 
-    pub fn get_number(&self) -> Option<i64> {
+    pub fn get_number(&self) -> Option<usize> {
         if let TokenKind::Num(val) = self.kind {
-            return Some(val);
+            return Some(val as usize);
         }
         None
     }

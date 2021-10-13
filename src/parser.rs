@@ -695,7 +695,7 @@ impl<'a> Parser<'a> {
         }
         if tok.equal("sizeof") {
             let node = Self::unary(self);
-            return Node::new(NodeKind::Num(node.get_type().size as i64));
+            return Node::new(NodeKind::Num(node.get_type().size));
         }
         match &tok.kind {
             TokenKind::Ident(name) => {

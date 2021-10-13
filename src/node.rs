@@ -28,8 +28,7 @@ pub enum BinOp {
 
 #[derive(Debug)]
 pub enum NodeKind {
-    // FIXME usizeでも良かったかも
-    Num(i64), // Integer
+    Num(usize), // Integer
     Unary(UnaryOp, Box<Node>),
     Bin {
         op: BinOp,
@@ -199,7 +198,7 @@ impl Node {
                 Self::new_bin(
                     BinOp::Add,
                     lhs,
-                    Self::new_bin(BinOp::Mul, rhs, Self::new(NodeKind::Num(lhs_size as i64))),
+                    Self::new_bin(BinOp::Mul, rhs, Self::new(NodeKind::Num(lhs_size))),
                 )
             }
             // num + pointer
@@ -222,7 +221,7 @@ impl Node {
                 Self::new_bin(
                     BinOp::Sub,
                     lhs,
-                    Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(lhs_size as i64)), rhs),
+                    Self::new_bin(BinOp::Mul, Self::new(NodeKind::Num(lhs_size)), rhs),
                 )
             }
             // pointer - pointer, which returns how many elements are between the two.
@@ -234,7 +233,7 @@ impl Node {
                 Node::new_bin(
                     BinOp::Div,
                     Node::new_bin(BinOp::Sub, lhs, rhs),
-                    Node::new(NodeKind::Num(lhs_size as i64)),
+                    Node::new(NodeKind::Num(lhs_size)),
                 )
             }
             // num - num
