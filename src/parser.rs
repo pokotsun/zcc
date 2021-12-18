@@ -20,7 +20,7 @@ use crate::tokenize::{consume, is_typename, next_equal, skip, Token, TokenKind};
 use crate::types::{FuncParam, Type, TypeKind};
 use crate::util::align_to;
 use crate::{
-    node::{BinOp, Member, Node, NodeKind, UnaryOp, Var, VarType},
+    node::{BinOp, Member, Node, NodeKind, TagScope, UnaryOp, Var, VarType},
     util::LabelCounter,
 };
 use std::collections::VecDeque;
@@ -72,8 +72,12 @@ impl Program {
 pub struct Parser<'a> {
     tok_peek: Peekable<Iter<'a, Token>>,
     locals: VecDeque<Rc<Var>>,
+    // Likewise, global variables are accumulated to this list.
     globals: VecDeque<Rc<Var>>,
+    // C has two block scopes; one is for variables and the other is
+    // for struct tags.
     var_scope: VecDeque<Rc<Var>>,
+    tag_scope: VecDeque<Rc<TagScope>>,
     scope_depth: usize,
     data_idx: LabelCounter,
 }
@@ -85,6 +89,7 @@ impl<'a> Parser<'a> {
             locals: VecDeque::new(),
             globals: VecDeque::new(),
             var_scope: VecDeque::new(),
+            tag_scope: VecDeque::new(),
             scope_depth: 0,
             data_idx: LabelCounter::new(),
         }
@@ -95,8 +100,15 @@ impl<'a> Parser<'a> {
         format!(".L.data.{}", idx)
     }
 
-    fn find_var(&self, name: String) -> Option<Rc<Var>> {
+    fn find_var(&self, name: &str) -> Option<Rc<Var>> {
         self.var_scope
+            .iter()
+            .find(|x| x.name == name && x.scope_depth <= self.scope_depth)
+            .map(|var| var.clone())
+    }
+
+    fn find_tag(&self, name: &str) -> Option<Rc<TagScope>> {
+        self.tag_scope
             .iter()
             .find(|x| x.name == name && x.scope_depth <= self.scope_depth)
             .map(|var| var.clone())
@@ -108,12 +120,21 @@ impl<'a> Parser<'a> {
 
     fn leave_scope(&mut self) {
         self.scope_depth -= 1;
+
         while let Some(_) = self
             .var_scope
             .get(0)
             .filter(|x| x.scope_depth > self.scope_depth)
         {
             self.var_scope.pop_front();
+        }
+
+        while let Some(_) = self
+            .tag_scope
+            .get(0)
+            .filter(|x| x.scope_depth > self.scope_depth)
+        {
+            self.tag_scope.pop_front();
         }
     }
 
@@ -574,8 +595,35 @@ impl<'a> Parser<'a> {
         members
     }
 
-    // struct-decl = "{" struct-members
+    // struct-decl = ident? "{" struct-members
     fn struct_decl(&mut self) -> Type {
+        // Read a struct tag.
+
+        let tag_name = self
+            .tok_peek
+            .peek()
+            .filter(|x| x.word != "{")
+            .map(|x| x.word.clone())
+            .and_then(|x| {
+                // identifierかつ"{"じゃないことが確定
+                // よって, struct tagのはずなので, skip.
+                self.tok_peek.next();
+                Some(x)
+            });
+
+        // tag_nameが有効かつ, 次のtokenが'{'でなければ, 定義済みのtagを指しているはずなので
+        // find_tagで探し, 見つからなければunimplemented!を返す.
+        if let Some(tag_scope) = tag_name
+            .as_ref()
+            .filter(|_| !next_equal(&mut self.tok_peek, "{"))
+            .map(|x| self.find_tag(x))
+        {
+            match tag_scope {
+                Some(tag_scope) => return tag_scope.ty.clone(),
+                None => unimplemented!("tag: '{}' is unknown struct type.", tag_name.unwrap()),
+            }
+        }
+
         skip(&mut self.tok_peek, "{");
 
         // Construct a struct object.
@@ -591,7 +639,14 @@ impl<'a> Parser<'a> {
             .iter()
             .max_by_key(|member| member.ty.align)
             .map_or(0, |x| x.ty.align);
-        Type::new_struct(members, align_to(offset, struct_align), struct_align)
+        let members_ty = Type::new_struct(members, align_to(offset, struct_align), struct_align);
+
+        if let Some(tag_name) = tag_name {
+            let tag_scope = TagScope::new(tag_name, self.scope_depth, members_ty.clone());
+            self.tag_scope.push_front(Rc::new(tag_scope));
+        }
+
+        members_ty
     }
 
     // TODO この2つの関数はparserの中に無くても良いかも
@@ -705,7 +760,7 @@ impl<'a> Parser<'a> {
                 }
 
                 // variable
-                let var = if let Some(x) = self.find_var(name.clone()) {
+                let var = if let Some(x) = self.find_var(&name) {
                     x
                 } else {
                     error_tok(tok, "undefined variable");

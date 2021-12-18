@@ -123,6 +123,22 @@ impl Member {
     }
 }
 
+pub struct TagScope {
+    pub name: String,
+    pub scope_depth: usize,
+    pub ty: Type,
+}
+
+impl TagScope {
+    pub fn new(name: String, scope_depth: usize, ty: Type) -> Self {
+        Self {
+            name,
+            scope_depth,
+            ty,
+        }
+    }
+}
+
 // AST node type
 #[derive(Debug)]
 pub struct Node {
