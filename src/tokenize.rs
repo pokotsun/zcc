@@ -203,6 +203,17 @@ pub fn tokenize(line: String) -> Result<Vec<Token>> {
             }
             nth_next(&mut chars_peek, 2); // for */
             continue;
+        } else if startswith(&mut chars_peek, "->") {
+            nth_next(&mut chars_peek, 2); // for ->
+            let tok = Token::new(
+                TokenKind::Reserved,
+                loc - pre_enter_loc,
+                line_no,
+                line.clone(),
+                "->".to_string(),
+            );
+            tokens.push(tok);
+            continue;
         }
         chars_peek.peek();
 

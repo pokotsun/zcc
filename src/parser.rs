@@ -666,7 +666,7 @@ impl<'a> Parser<'a> {
         unimplemented!("struct_ref is not struct:\n{:#?}", node);
     }
 
-    // postfix = primary ("[" expr "]" | "." ident)*
+    // postfix = primary ("[" expr "]" | "." ident | "->" ident)*
     fn postfix(&mut self) -> Node {
         let mut node = self.primary();
 
@@ -684,6 +684,15 @@ impl<'a> Parser<'a> {
                 let tok = self.tok_peek.next().unwrap();
                 let member_name = tok.word.clone();
                 node = Self::struct_ref(node, member_name);
+                continue;
+            }
+
+            if next_equal(&mut self.tok_peek, "->") {
+                // x->y is short for (*x).y
+                skip(&mut self.tok_peek, ".");
+                let tok = self.tok_peek.next().unwrap();
+                let member_name = tok.word.clone();
+                node = Self::struct_ref(Node::new_unary(UnaryOp::Deref, node), member_name);
                 continue;
             }
             return node;
