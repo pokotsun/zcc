@@ -185,7 +185,7 @@ impl Node {
                 BinOp::Comma => rhs.get_type(),
             },
             NodeKind::Var { var } => var.ty.clone(),
-            NodeKind::Num(_) | NodeKind::FunCall { .. } => Type::new_int(),
+            NodeKind::Num(_) | NodeKind::FunCall { .. } => Type::new_long(),
             _ => unreachable!("\n{:#?}", self),
         }
     }

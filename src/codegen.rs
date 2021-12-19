@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::unimplemented;
 
 use crate::parser::*;
@@ -11,6 +12,7 @@ use anyhow::Result;
 
 const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
 const ARG_REGISTERS8: [&str; 6] = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
+const ARG_REGISTERS16: [&str; 6] = ["%di", "%si", "%dx", "%cx", "%r8w", "%r9w"];
 const ARG_REGISTERS32: [&str; 6] = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"];
 const ARG_REGISTERS64: [&str; 6] = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
 
@@ -23,6 +25,10 @@ fn reg(idx: usize) -> &'static str {
     reg_access(REGISTERS, idx)
 }
 
+fn arg_reg32(idx: usize) -> &'static str {
+    reg_access(ARG_REGISTERS32, idx)
+}
+
 fn arg_reg64(idx: usize) -> &'static str {
     reg_access(ARG_REGISTERS64, idx)
 }
@@ -30,6 +36,7 @@ fn arg_reg64(idx: usize) -> &'static str {
 fn get_arg_reg(idx: usize, size: usize) -> &'static str {
     match size {
         1 => reg_access(ARG_REGISTERS8, idx),
+        2 => reg_access(ARG_REGISTERS16, idx),
         4 => reg_access(ARG_REGISTERS32, idx),
         8 => arg_reg64(idx),
         _ => unimplemented!("not implemented register bit size."),
@@ -50,6 +57,9 @@ fn load(ty: Type, top: usize) {
         }
         TypeKind::Char => {
             println!("  movsbq ({}), {}", r, r);
+        }
+        TypeKind::Short => {
+            println!("  movswq ({}), {}", r, r);
         }
         TypeKind::Int => {
             // 32bitオペランドを64bitに拡張してmove
@@ -73,6 +83,9 @@ fn store(ty: Type, top: usize) -> usize {
         }
         TypeKind::Char => {
             println!("  mov {}b, ({})", rs, rd);
+        }
+        TypeKind::Short => {
+            println!("  mov {}w, ({})", rs, rd);
         }
         TypeKind::Int => {
             println!("  mov {}d, ({})", rs, rd);
@@ -252,6 +265,24 @@ impl<'a> FuncGenerator<'a> {
                     let arg = args.get(i).unwrap();
 
                     if let VarType::Local(offset) = &arg.var_ty {
+                        match arg.ty.kind.deref() {
+                            TypeKind::Char => {
+                                println!("  movsbl -{}(%rbp), {}", offset.get(), arg_reg32(i));
+                            }
+                            TypeKind::Short => {
+                                println!("  movswl -{}(%rbp), {}", offset.get(), arg_reg32(i));
+                            }
+                            TypeKind::Int => {
+                                println!("  mov -{}(%rbp), {}", offset.get(), arg_reg32(i));
+                            }
+                            TypeKind::Long | TypeKind::Ptr(_) => {
+                                println!("  mov -{}(%rbp), {}", offset.get(), arg_reg64(i));
+                            }
+                            _ => unimplemented!(
+                                "this type {:#?} is not implemented on FunCall.",
+                                arg.ty
+                            ),
+                        }
                         if arg.ty.size == 1 {
                             println!("  movsbq -{}(%rbp), {}", offset.get(), arg_reg64(i));
                         } else {

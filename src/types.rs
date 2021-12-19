@@ -6,7 +6,9 @@ pub type FuncParam = (Type, String);
 #[derive(Clone, Debug)]
 pub enum TypeKind {
     Char,
+    Short,
     Int,
+    Long,
     Ptr(Rc<Type>),
     Func {
         return_ty: Rc<TypeKind>,
@@ -45,8 +47,16 @@ impl Type {
         Self::new(Rc::new(TypeKind::Char), 1, 1)
     }
 
+    pub fn new_short() -> Self {
+        Self::new(Rc::new(TypeKind::Short), 2, 2)
+    }
+
     pub fn new_int() -> Self {
         Self::new(Rc::new(TypeKind::Int), 4, 4)
+    }
+
+    pub fn new_long() -> Self {
+        Self::new(Rc::new(TypeKind::Long), 8, 8)
     }
 
     pub fn pointer_to(base: Rc<Type>) -> Self {

@@ -214,15 +214,23 @@ impl<'a> Parser<'a> {
         Function::new(func_name, var_params, body, self.locals.clone())
     }
 
-    // typespec = "char" | "int" | struct-decl | union-decl
+    // typespec = "char" | "short" | "int" | "long" | struct-decl | union-decl
     fn typespec(&mut self) -> Type {
         if next_equal(&mut self.tok_peek, "char") {
             skip(&mut self.tok_peek, "char");
             return Type::new_char();
         }
+        if next_equal(&mut self.tok_peek, "short") {
+            skip(&mut self.tok_peek, "short");
+            return Type::new_short();
+        }
         if next_equal(&mut self.tok_peek, "int") {
             skip(&mut self.tok_peek, "int");
             return Type::new_int();
+        }
+        if next_equal(&mut self.tok_peek, "long") {
+            skip(&mut self.tok_peek, "long");
+            return Type::new_long();
         }
         if next_equal(&mut self.tok_peek, "struct") {
             skip(&mut self.tok_peek, "struct");
