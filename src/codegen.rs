@@ -11,6 +11,7 @@ use anyhow::Result;
 
 const REGISTERS: [&str; 6] = ["%r10", "%r11", "%r12", "%r13", "%r14", "%r15"];
 const ARG_REGISTERS8: [&str; 6] = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
+const ARG_REGISTERS32: [&str; 6] = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"];
 const ARG_REGISTERS64: [&str; 6] = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
 
 fn reg_access(reg: [&'static str; 6], idx: usize) -> &'static str {
@@ -22,12 +23,17 @@ fn reg(idx: usize) -> &'static str {
     reg_access(REGISTERS, idx)
 }
 
-fn arg_reg8(idx: usize) -> &'static str {
-    reg_access(ARG_REGISTERS8, idx)
-}
-
 fn arg_reg64(idx: usize) -> &'static str {
     reg_access(ARG_REGISTERS64, idx)
+}
+
+fn get_arg_reg(idx: usize, size: usize) -> &'static str {
+    match size {
+        1 => reg_access(ARG_REGISTERS8, idx),
+        4 => reg_access(ARG_REGISTERS32, idx),
+        8 => arg_reg64(idx),
+        _ => unimplemented!("not implemented register bit size."),
+    }
 }
 
 fn load(ty: Type, top: usize) {
@@ -44,6 +50,10 @@ fn load(ty: Type, top: usize) {
         }
         TypeKind::Char => {
             println!("  movsbq ({}), {}", r, r);
+        }
+        TypeKind::Int => {
+            // 32bitオペランドを64bitに拡張してmove
+            println!("  movsxd ({}), {}", r, r);
         }
         _ => {
             println!("  mov ({}), {}", r, r);
@@ -63,6 +73,9 @@ fn store(ty: Type, top: usize) -> usize {
         }
         TypeKind::Char => {
             println!("  mov {}b, ({})", rs, rd);
+        }
+        TypeKind::Int => {
+            println!("  mov {}d, ({})", rs, rd);
         }
         _ => {
             println!("  mov {}, ({})", rs, rd);
@@ -242,7 +255,8 @@ impl<'a> FuncGenerator<'a> {
                         if arg.ty.size == 1 {
                             println!("  movsbq -{}(%rbp), {}", offset.get(), arg_reg64(i));
                         } else {
-                            println!("  mov -{}(%rbp), {}", offset.get(), arg_reg64(i));
+                            // ダブルワードをクワッドワードに符号拡張して転送
+                            println!("  movsxd -{}(%rbp), {}", offset.get(), arg_reg64(i));
                         }
                     }
                 }
@@ -362,18 +376,8 @@ fn emit_text(prog: &Program) -> Result<()> {
         let nargs = func.params.len();
         for (i, param) in func.params.iter().enumerate() {
             if let VarType::Local(offset) = param.var_ty.clone() {
-                match param.ty.kind.as_ref() {
-                    TypeKind::Char => {
-                        println!("  mov {}, -{}(%rbp)", arg_reg8(nargs - i - 1), offset.get());
-                    }
-                    _ => {
-                        println!(
-                            "  mov {}, -{}(%rbp)",
-                            arg_reg64(nargs - i - 1),
-                            offset.get()
-                        );
-                    }
-                }
+                let r = get_arg_reg(nargs - i - 1, param.ty.size);
+                println!("  mov {}, -{}(%rbp)", r, offset.get());
             }
         }
 

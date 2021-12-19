@@ -46,7 +46,7 @@ impl Type {
     }
 
     pub fn new_int() -> Self {
-        Self::new(Rc::new(TypeKind::Int), 8, 8)
+        Self::new(Rc::new(TypeKind::Int), 4, 4)
     }
 
     pub fn pointer_to(base: Rc<Type>) -> Self {
