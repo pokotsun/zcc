@@ -123,6 +123,7 @@ impl Member {
     }
 }
 
+// Scope for struct or union tags
 pub struct TagScope {
     pub name: String,
     pub scope_depth: usize,

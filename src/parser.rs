@@ -214,7 +214,7 @@ impl<'a> Parser<'a> {
         Function::new(func_name, var_params, body, self.locals.clone())
     }
 
-    // typespec = "char" | "int" | struct-decl
+    // typespec = "char" | "int" | struct-decl | union-decl
     fn typespec(&mut self) -> Type {
         if next_equal(&mut self.tok_peek, "char") {
             skip(&mut self.tok_peek, "char");
@@ -227,6 +227,10 @@ impl<'a> Parser<'a> {
         if next_equal(&mut self.tok_peek, "struct") {
             skip(&mut self.tok_peek, "struct");
             return self.struct_decl();
+        }
+        if next_equal(&mut self.tok_peek, "union") {
+            skip(&mut self.tok_peek, "union");
+            return self.union_decl();
         }
         unimplemented!("Undefined typespec: {}", self.tok_peek.next().unwrap().word);
     }
@@ -595,9 +599,9 @@ impl<'a> Parser<'a> {
         members
     }
 
-    // struct-decl = ident? "{" struct-members
-    fn struct_decl(&mut self) -> Type {
-        // Read a struct tag.
+    // struct-union-decl = ident? ("{" struct-members)?
+    fn struct_union_decl(&mut self, member_align: fn(&mut Vec<Member>) -> (usize, usize)) -> Type {
+        // Read struct tag.
 
         let tag_name = self
             .tok_peek
@@ -627,26 +631,72 @@ impl<'a> Parser<'a> {
         skip(&mut self.tok_peek, "{");
 
         // Construct a struct object.
-        let members = self.struct_members();
+        let mut members = self.struct_members();
 
-        let mut offset: usize = 0;
-        members.iter().for_each(|member| {
-            offset = align_to(offset, member.ty.align);
-            member.offset.set(offset);
-            offset += member.ty.size;
-        });
-        let struct_align = members
-            .iter()
-            .max_by_key(|member| member.ty.align)
-            .map_or(0, |x| x.ty.align);
+        let (offset, struct_align) = member_align(&mut members);
+
         let members_ty = Type::new_struct(members, align_to(offset, struct_align), struct_align);
 
+        // Register the struct / union type if a name was given.
         if let Some(tag_name) = tag_name {
             let tag_scope = TagScope::new(tag_name, self.scope_depth, members_ty.clone());
             self.tag_scope.push_front(Rc::new(tag_scope));
         }
 
         members_ty
+    }
+
+    // struct-decl
+    // closure returns (struct total size, struct total align size)
+    fn struct_decl(&mut self) -> Type {
+        let member_align = |members: &mut Vec<Member>| {
+            // If struct, we have to assign offsets.
+            // and we need to compute the alignment and the size.
+            let mut offset: usize = 0;
+            members.iter().for_each(|member| {
+                offset = align_to(offset, member.ty.align);
+                member.offset.set(offset);
+                offset += member.ty.size;
+            });
+
+            let struct_align = members
+                .iter()
+                .max_by_key(|member| member.ty.align)
+                .map_or(0, |x| x.ty.align);
+
+            (offset, struct_align)
+        };
+
+        let member_ty = self.struct_union_decl(member_align);
+
+        member_ty
+    }
+
+    // union-decl
+    // closure returns (struct total size, struct total align size)
+    fn union_decl(&mut self) -> Type {
+        // If union, we don't have to assign offsets because they
+        // are already initialized to zero.
+        // We need to compute the alignment and the size though.
+
+        let member_align = |members: &mut Vec<Member>| {
+            let union_align = members
+                .iter()
+                .max_by_key(|member| member.ty.align)
+                .map_or(0, |x| x.ty.align);
+            let union_size = members
+                .iter()
+                .max_by_key(|member| member.ty.size)
+                .map_or(0, |x| x.ty.size);
+
+            let union_size = align_to(union_size, union_align);
+
+            (union_size, union_align)
+        };
+
+        let member_ty = self.struct_union_decl(member_align);
+
+        member_ty
     }
 
     // TODO この2つの関数はparserの中に無くても良いかも
