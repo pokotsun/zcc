@@ -21,7 +21,8 @@ pub enum TokenKind {
 pub struct Token {
     pub kind: TokenKind, // Token kind
     loc: usize,          // Token location
-    line_no: usize,      // Line Number
+    #[allow(dead_code)]
+    line_no: usize, // Line Number
     line: Rc<String>,    // Line which exists token
     pub word: String,    // Token word
 }
