@@ -33,8 +33,8 @@ fn arg_reg64(idx: usize) -> &'static str {
 fn load(ty: Type, top: usize) {
     let r = reg(top - 1);
     match ty.kind.as_ref() {
-        TypeKind::Arr { .. } => {
-            // If it is an array, do nothing because in general we can't load
+        TypeKind::Arr { .. } | TypeKind::Struct { .. } => {
+            // If it is an array / struct, do nothing because in general we can't load
             // an entire array to a register. As a result, the result of an
             // evaluation of an array becomes not the array itself but the
             // address of the array. In other words, this is where "array is
@@ -55,6 +55,12 @@ fn store(ty: Type, top: usize) -> usize {
     let rd = reg(top - 1);
     let rs = reg(top - 2);
     match ty.kind.as_ref() {
+        TypeKind::Struct { .. } => {
+            for i in 0..ty.size {
+                println!("  mov {}({}), %al", i, rs);
+                println!("  mov %al, {}({})", i, rd);
+            }
+        }
         TypeKind::Char => {
             println!("  mov {}b, ({})", rs, rd);
         }
