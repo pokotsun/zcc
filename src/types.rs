@@ -1,4 +1,5 @@
 use crate::node::Member;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub type FuncParam = (Type, String);
@@ -9,13 +10,13 @@ pub enum TypeKind {
     Short,
     Int,
     Long,
-    Ptr(Rc<Type>),
+    Ptr(Rc<RefCell<Type>>),
     Func {
         return_ty: Rc<TypeKind>,
         params: Vec<FuncParam>,
     },
     Arr {
-        base: Rc<Type>,
+        base: Rc<RefCell<Type>>,
         length: usize,
     },
     Struct {
@@ -59,19 +60,19 @@ impl Type {
         Self::new(Rc::new(TypeKind::Long), 8, 8)
     }
 
-    pub fn pointer_to(base: Rc<Type>) -> Self {
-        Self::new(Rc::new(TypeKind::Ptr(Rc::new((*base).clone()))), 8, 8)
+    pub fn pointer_to(base: Rc<RefCell<Type>>) -> Self {
+        Self::new(Rc::new(TypeKind::Ptr(base)), 8, 8)
     }
 
-    pub fn array_of(base: Rc<Type>, length: usize) -> Self {
-        let size = base.size * length;
-        let align = base.align;
+    pub fn array_of(base: Rc<RefCell<Type>>, length: usize) -> Self {
+        let size = base.borrow().size * length;
+        let align = base.borrow().align;
         let ty = Self::new(Rc::new(TypeKind::Arr { base: base, length }), size, align);
         ty
     }
 
     pub fn new_string(length: usize) -> Self {
-        Self::array_of(Rc::new(Self::new_char()), length)
+        Self::array_of(Rc::new(RefCell::new(Self::new_char())), length)
     }
 
     pub fn new_struct(members: Vec<Member>, size: usize, align: usize) -> Self {

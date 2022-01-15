@@ -1,5 +1,6 @@
 use crate::types::{Type, TypeKind};
 use std::cell::Cell;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -77,13 +78,13 @@ pub enum VarType {
 #[derive(Clone, Debug)]
 pub struct Var {
     pub name: String,
-    pub ty: Type,
+    pub ty: Rc<RefCell<Type>>,
     pub var_ty: VarType,
     pub scope_depth: usize,
 }
 
 impl Var {
-    pub fn new_lvar(name: String, offset: usize, ty: Type, scope_depth: usize) -> Var {
+    pub fn new_lvar(name: String, offset: usize, ty: Rc<RefCell<Type>>, scope_depth: usize) -> Var {
         Var {
             name,
             ty,
@@ -92,7 +93,7 @@ impl Var {
         }
     }
 
-    pub fn new_gvar(name: String, ty: Type, init_data: Vec<String>) -> Var {
+    pub fn new_gvar(name: String, ty: Rc<RefCell<Type>>, init_data: Vec<String>) -> Var {
         Var {
             name,
             ty,
@@ -103,7 +104,7 @@ impl Var {
 
     pub fn new_string_literal(name: String, init_data: Vec<String>) -> Var {
         let ty = Type::new_string(init_data.len());
-        Var::new_gvar(name, ty, init_data)
+        Var::new_gvar(name, Rc::new(RefCell::new(ty)), init_data)
     }
 }
 #[derive(Debug, Clone)]
@@ -151,15 +152,17 @@ impl Node {
         Self { kind }
     }
 
-    pub fn get_type(&self) -> Type {
+    pub fn get_type_ref(&self) -> Rc<RefCell<Type>> {
         match &self.kind {
             NodeKind::Unary(op, child) => match op {
-                UnaryOp::Addr => match child.get_type().kind.as_ref() {
-                    TypeKind::Arr { base, length: _ } => Type::pointer_to(base.clone()),
-                    _ => Type::pointer_to(Rc::new(child.get_type())),
+                UnaryOp::Addr => match child.get_type_ref().borrow().kind.as_ref() {
+                    TypeKind::Arr { base, length: _ } => {
+                        Rc::new(RefCell::new(Type::pointer_to(base.clone())))
+                    }
+                    _ => Rc::new(RefCell::new(Type::pointer_to(child.get_type_ref()))),
                 },
-                UnaryOp::Deref => match child.get_type().kind.as_ref() {
-                    TypeKind::Arr { base, .. } | TypeKind::Ptr(base) => (*base.as_ref()).clone(),
+                UnaryOp::Deref => match child.get_type_ref().borrow().kind.as_ref() {
+                    TypeKind::Arr { base, .. } | TypeKind::Ptr(base) => base.clone(),
                     _ => unimplemented!("invalid pointer dereference"),
                 },
                 UnaryOp::StmtExpr => {
@@ -167,12 +170,12 @@ impl Node {
                         if let Some(NodeKind::Unary(UnaryOp::ExprStmt, child)) =
                             nodes.last().map(|node| &node.kind)
                         {
-                            return child.get_type();
+                            return child.get_type_ref();
                         }
                     }
                     unimplemented!("statement expression returning void is not supported");
                 }
-                UnaryOp::Member(member) => member.ty.clone(),
+                UnaryOp::Member(member) => Rc::new(RefCell::new(member.ty.clone())),
                 _ => unreachable!(),
             },
             NodeKind::Bin {
@@ -180,12 +183,16 @@ impl Node {
                 lhs,
                 rhs,
             } => match binop {
-                BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Assign => lhs.get_type(),
-                BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => Type::new_int(),
-                BinOp::Comma => rhs.get_type(),
+                BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Assign => {
+                    lhs.get_type_ref()
+                }
+                BinOp::Equal | BinOp::NEqual | BinOp::Lt | BinOp::Le => {
+                    Rc::new(RefCell::new(Type::new_int()))
+                }
+                BinOp::Comma => rhs.get_type_ref(),
             },
             NodeKind::Var { var } => var.ty.clone(),
-            NodeKind::Num(_) | NodeKind::FunCall { .. } => Type::new_long(),
+            NodeKind::Num(_) | NodeKind::FunCall { .. } => Rc::new(RefCell::new(Type::new_long())),
             _ => unreachable!("\n{:#?}", self),
         }
     }
@@ -205,11 +212,14 @@ impl Node {
     }
 
     pub fn new_add(lhs: Self, rhs: Self) -> Self {
-        match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
+        match (
+            lhs.get_type_ref().borrow().is_ptr(),
+            rhs.get_type_ref().borrow().is_ptr(),
+        ) {
             // pointer + num
             (true, false) => {
-                let lhs_size = match lhs.get_type().kind.as_ref() {
-                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.size,
+                let lhs_size = match lhs.get_type_ref().borrow().kind.as_ref() {
+                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.borrow().size,
                     _ => unimplemented!("undefined internal type on ptr add"),
                 };
                 Self::new_bin(
@@ -228,11 +238,14 @@ impl Node {
     }
 
     pub fn new_sub(lhs: Self, rhs: Self) -> Self {
-        match (lhs.get_type().is_ptr(), rhs.get_type().is_ptr()) {
+        match (
+            lhs.get_type_ref().borrow().is_ptr(),
+            rhs.get_type_ref().borrow().is_ptr(),
+        ) {
             // pointer - num
             (true, false) => {
-                let lhs_size = match lhs.get_type().kind.as_ref() {
-                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.size,
+                let lhs_size = match lhs.get_type_ref().borrow().kind.as_ref() {
+                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.borrow().size,
                     _ => unimplemented!("undefined internal type on ptr sub"),
                 };
                 Self::new_bin(
@@ -243,8 +256,8 @@ impl Node {
             }
             // pointer - pointer, which returns how many elements are between the two.
             (true, true) => {
-                let lhs_size = match lhs.get_type().kind.as_ref() {
-                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.size,
+                let lhs_size = match lhs.get_type_ref().borrow().kind.as_ref() {
+                    TypeKind::Ptr(base) | TypeKind::Arr { base, .. } => base.borrow().size,
                     _ => unimplemented!("undefined internal type on ptr - ptr sub"),
                 };
                 Node::new_bin(

@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::ops::Deref;
+use std::rc::Rc;
 use std::unimplemented;
 
 use crate::parser::*;
@@ -43,9 +45,9 @@ fn get_arg_reg(idx: usize, size: usize) -> &'static str {
     }
 }
 
-fn load(ty: Type, top: usize) {
+fn load(ty: Rc<RefCell<Type>>, top: usize) {
     let r = reg(top - 1);
-    match ty.kind.as_ref() {
+    match ty.borrow().kind.as_ref() {
         TypeKind::Arr { .. } | TypeKind::Struct { .. } => {
             // If it is an array / struct, do nothing because in general we can't load
             // an entire array to a register. As a result, the result of an
@@ -71,12 +73,12 @@ fn load(ty: Type, top: usize) {
     }
 }
 
-fn store(ty: Type, top: usize) -> usize {
+fn store(ty: Rc<RefCell<Type>>, top: usize) -> usize {
     let rd = reg(top - 1);
     let rs = reg(top - 2);
-    match ty.kind.as_ref() {
+    match ty.borrow().kind.as_ref() {
         TypeKind::Struct { .. } => {
-            for i in 0..ty.size {
+            for i in 0..ty.borrow().size {
                 println!("  mov {}({}), %al", i, rs);
                 println!("  mov %al, {}({})", i, rd);
             }
@@ -107,7 +109,7 @@ fn emit_data(prog: &Program) {
                     println!("  .byte {}", s);
                 }
             } else {
-                println!("  .zero {}", var.ty.size);
+                println!("  .zero {}", var.ty.borrow().size);
             }
         }
     }
@@ -175,12 +177,12 @@ impl<'a> FuncGenerator<'a> {
                 lhs,
                 rhs,
             } => {
-                if let TypeKind::Arr { .. } = node.get_type().kind.as_ref() {
+                if let TypeKind::Arr { .. } = node.get_type_ref().borrow().kind.as_ref() {
                     unimplemented!("array will not be assigned.")
                 }
                 top = self.gen_expr(&*rhs, top)?;
                 top = self.gen_addr(&*lhs, top)?;
-                top = store(node.get_type(), top);
+                top = store(node.get_type_ref(), top);
             }
             NodeKind::Bin {
                 op: BinOp::Comma,
@@ -236,11 +238,11 @@ impl<'a> FuncGenerator<'a> {
             }
             NodeKind::Var { .. } | NodeKind::Unary(UnaryOp::Member(..), ..) => {
                 top = self.gen_addr(&node, top)?;
-                load(node.get_type(), top);
+                load(node.get_type_ref(), top);
             }
             NodeKind::Unary(UnaryOp::Deref, child) => {
                 top = self.gen_expr(child, top)?;
-                load(node.get_type(), top);
+                load(node.get_type_ref(), top);
             }
             NodeKind::Unary(UnaryOp::Addr, child) => {
                 top = self.gen_addr(child, top)?;
@@ -265,7 +267,7 @@ impl<'a> FuncGenerator<'a> {
                     let arg = args.get(i).unwrap();
 
                     if let VarType::Local(offset) = &arg.var_ty {
-                        match arg.ty.kind.deref() {
+                        match arg.ty.borrow().kind.deref() {
                             TypeKind::Char => {
                                 println!("  movsbl -{}(%rbp), {}", offset.get(), arg_reg32(i));
                             }
@@ -283,7 +285,7 @@ impl<'a> FuncGenerator<'a> {
                                 arg.ty
                             ),
                         }
-                        if arg.ty.size == 1 {
+                        if arg.ty.borrow().size == 1 {
                             println!("  movsbq -{}(%rbp), {}", offset.get(), arg_reg64(i));
                         } else {
                             // ダブルワードをクワッドワードに符号拡張して転送
@@ -407,7 +409,7 @@ fn emit_text(prog: &Program) -> Result<()> {
         let nargs = func.params.len();
         for (i, param) in func.params.iter().enumerate() {
             if let VarType::Local(offset) = param.var_ty.clone() {
-                let r = get_arg_reg(nargs - i - 1, param.ty.size);
+                let r = get_arg_reg(nargs - i - 1, param.ty.borrow().size);
                 println!("  mov {}, -{}(%rbp)", r, offset.get());
             }
         }

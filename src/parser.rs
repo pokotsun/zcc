@@ -23,6 +23,7 @@ use crate::{
     node::{BinOp, Member, Node, NodeKind, TagScope, UnaryOp, Var, VarType},
     util::LabelCounter,
 };
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::slice::Iter;
 use std::{iter::Peekable, rc::Rc, unimplemented};
@@ -40,8 +41,8 @@ impl Function {
     fn new(name: String, params: VecDeque<Rc<Var>>, body: Node, locals: VecDeque<Rc<Var>>) -> Self {
         let mut offset = 32;
         for local in locals.iter() {
-            offset = align_to(offset, local.ty.align);
-            offset += local.ty.size;
+            offset = align_to(offset, local.ty.borrow().align);
+            offset += local.ty.borrow().size;
             if let VarType::Local(var_offset) = local.var_ty.clone() {
                 var_offset.set(offset);
             }
@@ -156,7 +157,8 @@ impl<'a> Parser<'a> {
                 _ => {
                     // Global variable
                     loop {
-                        let var = Var::new_gvar(name, ty.clone(), Vec::new());
+                        let var =
+                            Var::new_gvar(name, Rc::new(RefCell::new(ty.clone())), Vec::new());
                         let var = Rc::new(var);
                         parser.var_scope.push_front(var.clone());
                         parser.globals.push_front(var);
@@ -199,7 +201,12 @@ impl<'a> Parser<'a> {
             for (ty, var_name) in params.iter() {
                 // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
                 // 一旦無効な値0を入れる
-                let var = Var::new_lvar(var_name.clone(), 0, ty.clone(), self.scope_depth);
+                let var = Var::new_lvar(
+                    var_name.clone(),
+                    0,
+                    Rc::new(RefCell::new(ty.clone())),
+                    self.scope_depth,
+                );
                 let var = Rc::new(var);
                 var_params.push_front(var.clone());
                 self.var_scope.push_front(var.clone());
@@ -273,7 +280,7 @@ impl<'a> Parser<'a> {
             if let Some(size) = self.tok_peek.next().and_then(|tok| tok.get_number()) {
                 skip(&mut self.tok_peek, "]");
                 let ty = self.type_suffix(ty);
-                let ty = Rc::new(ty);
+                let ty = Rc::new(RefCell::new(ty));
                 return Type::array_of(ty, size as usize);
             } else {
                 unimplemented!("Array length is not specified.");
@@ -286,7 +293,7 @@ impl<'a> Parser<'a> {
     fn declarator(&mut self, mut ty: Type) -> FuncParam {
         // FIXME なんか凄く汚い
         while consume(&mut self.tok_peek, "*") {
-            ty = Type::pointer_to(Rc::new(ty));
+            ty = Type::pointer_to(Rc::new(RefCell::new(ty)));
         }
         let tok = self.tok_peek.next().unwrap();
         if !matches!(tok.kind, TokenKind::Ident(_)) {
@@ -311,7 +318,7 @@ impl<'a> Parser<'a> {
             let (ty, name) = Self::declarator(self, basety.clone());
             // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
             // 一旦無効な値0を入れる
-            let var = Var::new_lvar(name, 0, ty.clone(), self.scope_depth);
+            let var = Var::new_lvar(name, 0, Rc::new(RefCell::new(ty.clone())), self.scope_depth);
             let var = Rc::new(var);
             let rcvar = var.clone();
             self.var_scope.push_front(var.clone());
@@ -717,7 +724,7 @@ impl<'a> Parser<'a> {
     }
 
     fn struct_ref(node: Node, member_name: String) -> Node {
-        if let TypeKind::Struct { members } = node.get_type().kind.as_ref().clone() {
+        if let TypeKind::Struct { members } = node.get_type_ref().borrow().kind.as_ref().clone() {
             let member = Self::get_struct_member(members, member_name);
             return Node::new_unary(UnaryOp::Member(member), node);
         }
@@ -771,10 +778,10 @@ impl<'a> Parser<'a> {
                 skip(&mut self.tok_peek, ",");
             }
             let arg = Self::assign(self);
-            let mut base = arg.get_type();
+            let mut base = arg.get_type_ref();
 
-            if base.is_ptr() {
-                base = Type::pointer_to(Rc::new(base));
+            if base.borrow().is_ptr() {
+                base = Rc::new(RefCell::new(Type::pointer_to(base)));
             }
 
             let var = Var::new_lvar("".to_string(), 0, base, self.scope_depth);
@@ -817,7 +824,7 @@ impl<'a> Parser<'a> {
         }
         if tok.equal("sizeof") {
             let node = Self::unary(self);
-            return Node::new(NodeKind::Num(node.get_type().size));
+            return Node::new(NodeKind::Num(node.get_type_ref().borrow().size));
         }
         match &tok.kind {
             TokenKind::Ident(name) => {
