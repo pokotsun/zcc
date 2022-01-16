@@ -109,13 +109,13 @@ impl Var {
 }
 #[derive(Debug, Clone)]
 pub struct Member {
-    pub ty: Type,
+    pub ty: Rc<RefCell<Type>>,
     pub name: String,
     pub offset: Cell<usize>,
 }
 
 impl Member {
-    pub fn new(ty: Type, name: String, offset: usize) -> Self {
+    pub fn new(ty: Rc<RefCell<Type>>, name: String, offset: usize) -> Self {
         Self {
             ty,
             name,
@@ -175,7 +175,7 @@ impl Node {
                     }
                     unimplemented!("statement expression returning void is not supported");
                 }
-                UnaryOp::Member(member) => Rc::new(RefCell::new(member.ty.clone())),
+                UnaryOp::Member(member) => member.ty.clone(),
                 _ => unreachable!(),
             },
             NodeKind::Bin {

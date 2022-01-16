@@ -259,7 +259,7 @@ impl<'a> Parser<'a> {
                 skip(&mut self.tok_peek, ",");
             }
             let basety = Self::typespec(self);
-            let (ty, var_name) = self.declarator(basety.clone());
+            let (ty, var_name) = self.declarator(basety);
             params.push((ty, var_name));
         }
         skip(&mut self.tok_peek, ")");
@@ -318,7 +318,7 @@ impl<'a> Parser<'a> {
             let (ty, name) = Self::declarator(self, basety.clone());
             // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
             // 一旦無効な値0を入れる
-            let var = Var::new_lvar(name, 0, Rc::new(RefCell::new(ty.clone())), self.scope_depth);
+            let var = Var::new_lvar(name, 0, Rc::new(RefCell::new(ty)), self.scope_depth);
             let var = Rc::new(var);
             let rcvar = var.clone();
             self.var_scope.push_front(var.clone());
@@ -606,7 +606,7 @@ impl<'a> Parser<'a> {
                 let (ty, name) = self.declarator(basety.clone());
                 // とりあえずoffsetには適当な値を入れておく
                 // TODO ここはその場でoffsetを入れられそう
-                let member = Member::new(ty, name, 0);
+                let member = Member::new(Rc::new(RefCell::new(ty)), name, 0);
                 members.push(member);
             }
         }
@@ -669,15 +669,15 @@ impl<'a> Parser<'a> {
             // and we need to compute the alignment and the size.
             let mut offset: usize = 0;
             members.iter().for_each(|member| {
-                offset = align_to(offset, member.ty.align);
+                offset = align_to(offset, member.ty.borrow().align);
                 member.offset.set(offset);
-                offset += member.ty.size;
+                offset += member.ty.borrow().size;
             });
 
             let struct_align = members
                 .iter()
-                .max_by_key(|member| member.ty.align)
-                .map_or(0, |x| x.ty.align);
+                .max_by_key(|member| member.ty.borrow().align)
+                .map_or(0, |x| x.ty.borrow().align);
 
             (offset, struct_align)
         };
@@ -697,12 +697,12 @@ impl<'a> Parser<'a> {
         let member_align = |members: &mut Vec<Member>| {
             let union_align = members
                 .iter()
-                .max_by_key(|member| member.ty.align)
-                .map_or(0, |x| x.ty.align);
+                .max_by_key(|member| member.ty.borrow().align)
+                .map_or(0, |x| x.ty.borrow().align);
             let union_size = members
                 .iter()
-                .max_by_key(|member| member.ty.size)
-                .map_or(0, |x| x.ty.size);
+                .max_by_key(|member| member.ty.borrow().size)
+                .map_or(0, |x| x.ty.borrow().size);
 
             let union_size = align_to(union_size, union_align);
 
