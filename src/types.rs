@@ -6,6 +6,7 @@ pub type FuncParam = (Rc<RefCell<Type>>, String);
 
 #[derive(Clone, Debug)]
 pub enum TypeKind {
+    Void,
     Char,
     Short,
     Int,
@@ -43,6 +44,10 @@ pub struct Type {
 impl Type {
     fn new(kind: Rc<TypeKind>, size: usize, align: usize) -> Self {
         Self { kind, size, align }
+    }
+
+    pub fn new_void() -> Self {
+        Self::new(Rc::new(TypeKind::Void), 1, 1)
     }
 
     pub fn new_char() -> Self {

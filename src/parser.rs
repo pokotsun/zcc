@@ -219,8 +219,13 @@ impl<'a> Parser<'a> {
         Function::new(func_name, var_params, body, self.locals.clone())
     }
 
-    // typespec = "char" | "short" | "int" | "long" | struct-decl | union-decl
+    // typespec = "void" | "char" | "short" | "int" | "long"
+    //          | struct-decl | union-decl
     fn typespec(&mut self) -> Type {
+        if next_equal(&mut self.tok_peek, "void") {
+            skip(&mut self.tok_peek, "void");
+            return Type::new_void();
+        }
         if next_equal(&mut self.tok_peek, "char") {
             skip(&mut self.tok_peek, "char");
             return Type::new_char();
@@ -330,6 +335,9 @@ impl<'a> Parser<'a> {
             is_already_declared = true;
 
             let (ty, name) = Self::declarator(self, basety.clone());
+            if let TypeKind::Void = ty.borrow().kind.as_ref() {
+                unimplemented!("variable declared void");
+            }
             // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
             // 一旦無効な値0を入れる
             let var = Var::new_lvar(name, 0, ty, self.scope_depth);

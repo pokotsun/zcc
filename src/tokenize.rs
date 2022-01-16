@@ -66,14 +66,14 @@ impl Token {
 fn is_keyword(target: &str) -> bool {
     let keywords = [
         "return", "if", "else", "for", "while", "char", "short", "int", "long", "sizeof", "struct",
-        "union",
+        "union", "void",
     ];
     keywords.iter().any(|keyword| target == *keyword)
 }
 
 pub fn is_typename(tok_peek: &mut Peekable<Iter<Token>>) -> bool {
     // REVIEW: このtype情報はどこかにまとめられないか
-    let types = ["char", "short", "int", "long", "struct", "union"];
+    let types = ["void", "char", "short", "int", "long", "struct", "union"];
     types.iter().any(|s| next_equal(tok_peek, s))
 }
 

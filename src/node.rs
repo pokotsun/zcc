@@ -163,6 +163,7 @@ impl Node {
                 },
                 UnaryOp::Deref => match child.get_type_ref().borrow().kind.as_ref() {
                     TypeKind::Arr { base, .. } | TypeKind::Ptr(base) => base.clone(),
+                    TypeKind::Void => unimplemented!("dereferencing a void pointer"),
                     _ => unimplemented!("invalid pointer dereference"),
                 },
                 UnaryOp::StmtExpr => {
