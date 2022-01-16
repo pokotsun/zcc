@@ -283,11 +283,27 @@ impl<'a> Parser<'a> {
         ty
     }
 
-    // declarator = "*"* ident type-suffix
+    // declarator = "*"* ("(" declarator ")" | ident) type-suffix
     fn declarator(&mut self, mut ty: Rc<RefCell<Type>>) -> FuncParam {
         // FIXME なんか凄く汚い
         while consume(&mut self.tok_peek, "*") {
             ty = Rc::new(RefCell::new(Type::pointer_to(ty)));
+        }
+        if next_equal(&mut self.tok_peek, "(") {
+            skip(&mut self.tok_peek, "(");
+            // とりあえず適当な値を入れておく
+            let mut place_holder = Rc::new(RefCell::new(Type::new_dummy()));
+
+            let new_ty = self.declarator(place_holder.clone());
+            skip(&mut self.tok_peek, ")");
+
+            // 最後に型の中身を置き換える
+            while let TypeKind::Ptr(child) = (place_holder.clone()).borrow().kind.as_ref() {
+                place_holder = child.clone();
+            }
+            *place_holder.borrow_mut() = self.type_suffix(ty).borrow().clone();
+
+            return new_ty;
         }
 
         let tok = self.tok_peek.next().unwrap();

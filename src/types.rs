@@ -2,7 +2,7 @@ use crate::node::Member;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub type FuncParam = (Type, String);
+pub type FuncParam = (Rc<RefCell<Type>>, String);
 
 #[derive(Clone, Debug)]
 pub enum TypeKind {
@@ -22,6 +22,7 @@ pub enum TypeKind {
     Struct {
         members: Vec<Member>,
     },
+    Dummy,
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +78,10 @@ impl Type {
 
     pub fn new_struct(members: Vec<Member>, size: usize, align: usize) -> Self {
         Self::new(Rc::new(TypeKind::Struct { members }), size, align)
+    }
+
+    pub fn new_dummy() -> Self {
+        Self::new(Rc::new(TypeKind::Dummy), 0, 0)
     }
 
     pub fn is_ptr(&self) -> bool {
