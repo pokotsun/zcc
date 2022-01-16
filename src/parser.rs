@@ -146,10 +146,11 @@ impl<'a> Parser<'a> {
         let mut parser = Parser::new(tok_peek);
         let mut funcs = Vec::new();
         while let Some(_) = parser.tok_peek.peek() {
-            let basety = parser.typespec();
+            let basety = Rc::new(RefCell::new(parser.typespec()));
             let (mut ty, mut name) = parser.declarator(basety);
 
-            match ty.kind.as_ref() {
+            let ty_kind = ty.borrow().kind.clone();
+            match &*ty_kind {
                 TypeKind::Func { .. } => {
                     let func = parser.typed_funcdef(ty, name);
                     funcs.push(func);
@@ -157,8 +158,7 @@ impl<'a> Parser<'a> {
                 _ => {
                     // Global variable
                     loop {
-                        let var =
-                            Var::new_gvar(name, Rc::new(RefCell::new(ty.clone())), Vec::new());
+                        let var = Var::new_gvar(name, ty.clone(), Vec::new());
                         let var = Rc::new(var);
                         parser.var_scope.push_front(var.clone());
                         parser.globals.push_front(var);
@@ -180,7 +180,7 @@ impl<'a> Parser<'a> {
     // funcdef = typespec declarator compound-stmt
     #[allow(dead_code)]
     fn funcdef(&mut self) -> Function {
-        let ty = self.typespec();
+        let ty = Rc::new(RefCell::new(self.typespec()));
         let (ty, func_name) = self.declarator(ty);
 
         self.typed_funcdef(ty, func_name)
@@ -189,24 +189,19 @@ impl<'a> Parser<'a> {
     // 既に関数の返り値と関数名が得られた場合の関数の中身を取り出す
     // 主にcompoud-stmtの処理を行う
     // typed-funcdef = typespec declarator compound-stmt
-    fn typed_funcdef(&mut self, ty: Type, func_name: String) -> Function {
+    fn typed_funcdef(&mut self, ty: Rc<RefCell<Type>>, func_name: String) -> Function {
         self.enter_scope();
 
         let mut var_params = VecDeque::new();
         if let TypeKind::Func {
             return_ty: _,
             params,
-        } = ty.kind.as_ref()
+        } = ty.borrow().kind.as_ref()
         {
             for (ty, var_name) in params.iter() {
                 // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
                 // 一旦無効な値0を入れる
-                let var = Var::new_lvar(
-                    var_name.clone(),
-                    0,
-                    Rc::new(RefCell::new(ty.clone())),
-                    self.scope_depth,
-                );
+                let var = Var::new_lvar(var_name.clone(), 0, ty.clone(), self.scope_depth);
                 let var = Rc::new(var);
                 var_params.push_front(var.clone());
                 self.var_scope.push_front(var.clone());
@@ -252,36 +247,35 @@ impl<'a> Parser<'a> {
 
     // func-params = (param ("," param)*)? ")"
     // param = typespec declarator
-    fn func_params(&mut self, ty: Type) -> Type {
+    fn func_params(&mut self, ty: Rc<RefCell<Type>>) -> Type {
         let mut params = Vec::new();
         while !next_equal(&mut self.tok_peek, ")") {
             if params.len() > 0 {
                 skip(&mut self.tok_peek, ",");
             }
-            let basety = Self::typespec(self);
+            let basety = Rc::new(RefCell::new(self.typespec()));
             let (ty, var_name) = self.declarator(basety);
             params.push((ty, var_name));
         }
         skip(&mut self.tok_peek, ")");
-        return Type::new_func(ty.kind, params);
+        return Type::new_func(ty.borrow().kind.clone(), params);
     }
 
     // type-suffix = "(" func-params
     //             | "[" num "]"
     //             | "[" num "]" type-suffix
     //             | sigma
-    fn type_suffix(&mut self, ty: Type) -> Type {
+    fn type_suffix(&mut self, ty: Rc<RefCell<Type>>) -> Rc<RefCell<Type>> {
         if next_equal(&mut self.tok_peek, "(") {
             skip(&mut self.tok_peek, "(");
-            return Self::func_params(self, ty);
+            return Rc::new(RefCell::new(Self::func_params(self, ty)));
         }
         if next_equal(&mut self.tok_peek, "[") {
             skip(&mut self.tok_peek, "[");
             if let Some(size) = self.tok_peek.next().and_then(|tok| tok.get_number()) {
                 skip(&mut self.tok_peek, "]");
                 let ty = self.type_suffix(ty);
-                let ty = Rc::new(RefCell::new(ty));
-                return Type::array_of(ty, size as usize);
+                return Rc::new(RefCell::new(Type::array_of(ty, size as usize)));
             } else {
                 unimplemented!("Array length is not specified.");
             }
@@ -290,22 +284,23 @@ impl<'a> Parser<'a> {
     }
 
     // declarator = "*"* ident type-suffix
-    fn declarator(&mut self, mut ty: Type) -> FuncParam {
+    fn declarator(&mut self, mut ty: Rc<RefCell<Type>>) -> FuncParam {
         // FIXME なんか凄く汚い
         while consume(&mut self.tok_peek, "*") {
-            ty = Type::pointer_to(Rc::new(RefCell::new(ty)));
+            ty = Rc::new(RefCell::new(Type::pointer_to(ty)));
         }
+
         let tok = self.tok_peek.next().unwrap();
         if !matches!(tok.kind, TokenKind::Ident(_)) {
             error_tok(tok, "invalid pointer dereference");
         }
-        ty = Self::type_suffix(self, ty);
+        ty = self.type_suffix(ty);
         (ty, tok.word.clone())
     }
 
     // declaration = typespec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
     fn declaration(&mut self) -> Node {
-        let basety = self.typespec();
+        let basety = Rc::new(RefCell::new(self.typespec()));
 
         let mut is_already_declared = false;
         let mut nodes = Vec::new();
@@ -318,7 +313,7 @@ impl<'a> Parser<'a> {
             let (ty, name) = Self::declarator(self, basety.clone());
             // offsetは関数内の全変数が出揃わないとoffsetを用意できないため
             // 一旦無効な値0を入れる
-            let var = Var::new_lvar(name, 0, Rc::new(RefCell::new(ty)), self.scope_depth);
+            let var = Var::new_lvar(name, 0, ty, self.scope_depth);
             let var = Rc::new(var);
             let rcvar = var.clone();
             self.var_scope.push_front(var.clone());
@@ -594,7 +589,7 @@ impl<'a> Parser<'a> {
     fn struct_members(&mut self) -> Vec<Member> {
         let mut members = Vec::new();
         while !next_equal(&mut self.tok_peek, "}") {
-            let basety = self.typespec();
+            let basety = Rc::new(RefCell::new(self.typespec()));
             let mut is_first_member = true;
 
             while !consume(&mut self.tok_peek, ";") {
@@ -606,7 +601,7 @@ impl<'a> Parser<'a> {
                 let (ty, name) = self.declarator(basety.clone());
                 // とりあえずoffsetには適当な値を入れておく
                 // TODO ここはその場でoffsetを入れられそう
-                let member = Member::new(Rc::new(RefCell::new(ty)), name, 0);
+                let member = Member::new(ty, name, 0);
                 members.push(member);
             }
         }
