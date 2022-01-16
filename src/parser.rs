@@ -152,6 +152,9 @@ impl<'a> Parser<'a> {
             let ty_kind = ty.borrow().kind.clone();
             match &*ty_kind {
                 TypeKind::Func { .. } => {
+                    if consume(&mut parser.tok_peek, ";") {
+                        continue;
+                    }
                     let func = parser.typed_funcdef(ty, name);
                     funcs.push(func);
                 }

@@ -8,7 +8,7 @@ zcc: clean
 test: zcc
 	cargo test -- --nocapture
 	./zcc tests/tests.c > tmp.s
-	$(CC) -static -o tmp tmp.s
+	$(CC) -static -o tmp tmp.s tests/extern.c
 	./tmp
 
 check:
