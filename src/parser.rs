@@ -24,6 +24,7 @@ use crate::{
     util::LabelCounter,
 };
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::slice::Iter;
 use std::{iter::Peekable, rc::Rc, unimplemented};
@@ -219,38 +220,86 @@ impl<'a> Parser<'a> {
         Function::new(func_name, var_params, body, self.locals.clone())
     }
 
-    // typespec = "void" | "char" | "short" | "int" | "long"
+    // typespec = typename typename*
+    // typename = "void" | "char" | "short" | "int" | "long"
     //          | struct-decl | union-decl
+    //
+    // The order of typenames in a type-specifier doesn't matter. For
+    // example, `int long static` means the same as `static long int`.
+    // That can also be written as `static long` because you can omit
+    // `int` if `long` or `short` are specified. However, something like
+    // `char int` is no a valid type specifier. We have to accept only a
+    // limited combinations of the typenames.
+    //
+    // In this function, we count the number of occurrences of each typename
+    // while keeping the "current" type object that the typenames up
+    // until that point represent. When we reach a non-typename token,
+    // we returns the current type object.
     fn typespec(&mut self) -> Type {
-        if next_equal(&mut self.tok_peek, "void") {
-            skip(&mut self.tok_peek, "void");
-            return Type::new_void();
+        #[derive(PartialEq, Eq, Hash)]
+        enum TypeSpec {
+            Void,
+            Char,
+            Short,
+            Int,
+            Long,
+            Other,
         }
-        if next_equal(&mut self.tok_peek, "char") {
-            skip(&mut self.tok_peek, "char");
-            return Type::new_char();
+        let mut rtn_ty: Option<Type> = None;
+        let mut type_counter = HashSet::new();
+        while is_typename(&mut self.tok_peek) {
+            // Handle user-defined types.
+            // NOTE. なんでOtherの情報も保持しないといけないのか謎
+            if consume(&mut self.tok_peek, "struct") {
+                rtn_ty = Some(self.struct_decl());
+                type_counter.insert(TypeSpec::Other);
+                continue;
+            }
+            if consume(&mut self.tok_peek, "union") {
+                rtn_ty = Some(self.union_decl());
+                type_counter.insert(TypeSpec::Other);
+                continue;
+            }
+
+            // Handle built-in types.
+            if consume(&mut self.tok_peek, "void") {
+                type_counter.insert(TypeSpec::Void);
+            } else if consume(&mut self.tok_peek, "char") {
+                type_counter.insert(TypeSpec::Char);
+            } else if consume(&mut self.tok_peek, "short") {
+                type_counter.insert(TypeSpec::Short);
+            } else if consume(&mut self.tok_peek, "int") {
+                type_counter.insert(TypeSpec::Int);
+            } else if consume(&mut self.tok_peek, "long") {
+                type_counter.insert(TypeSpec::Long);
+            } else {
+                unimplemented!("internal error.");
+            }
+
+            rtn_ty = if type_counter.contains(&TypeSpec::Void) {
+                Some(Type::new_void())
+            } else if type_counter.contains(&TypeSpec::Char) {
+                Some(Type::new_char())
+            } else if type_counter.contains(&TypeSpec::Short)
+                || (type_counter.contains(&TypeSpec::Short)
+                    && type_counter.contains(&TypeSpec::Int))
+            {
+                Some(Type::new_short())
+            } else if type_counter.contains(&TypeSpec::Long)
+                || (type_counter.contains(&TypeSpec::Long) && type_counter.contains(&TypeSpec::Int))
+            {
+                Some(Type::new_long())
+            } else if type_counter.contains(&TypeSpec::Int) {
+                Some(Type::new_int())
+            } else {
+                unimplemented!("invalid type");
+            };
         }
-        if next_equal(&mut self.tok_peek, "short") {
-            skip(&mut self.tok_peek, "short");
-            return Type::new_short();
-        }
-        if next_equal(&mut self.tok_peek, "int") {
-            skip(&mut self.tok_peek, "int");
-            return Type::new_int();
-        }
-        if next_equal(&mut self.tok_peek, "long") {
-            skip(&mut self.tok_peek, "long");
-            return Type::new_long();
-        }
-        if next_equal(&mut self.tok_peek, "struct") {
-            skip(&mut self.tok_peek, "struct");
-            return self.struct_decl();
-        }
-        if next_equal(&mut self.tok_peek, "union") {
-            skip(&mut self.tok_peek, "union");
-            return self.union_decl();
-        }
-        unimplemented!("Undefined typespec: {}", self.tok_peek.next().unwrap().word);
+
+        return match rtn_ty {
+            Some(ty) => ty,
+            None => unimplemented!("not gained any type"),
+        };
     }
 
     // func-params = (param ("," param)*)? ")"
