@@ -15,6 +15,7 @@
 // Most parsing functions don't change the global state of the parser.
 // So it is very easy to lookahead arbitrary number of tokens in this parser.
 
+use crate::node::{TypeScope, VarAttr};
 use crate::tokenize::error_tok;
 use crate::tokenize::{consume, is_typename, next_equal, skip, Token, TokenKind};
 use crate::types::{FuncParam, Type, TypeKind};
@@ -76,9 +77,10 @@ pub struct Parser<'a> {
     locals: VecDeque<Rc<Var>>,
     // Likewise, global variables are accumulated to this list.
     globals: VecDeque<Rc<Var>>,
-    // C has two block scopes; one is for variables and the other is
-    // for struct tags.
+    // C has two block scopes; one is for variables/typedefs and
+    // the other is for struct tags.
     var_scope: VecDeque<Rc<Var>>,
+    typedefs: VecDeque<Rc<TypeScope>>,
     tag_scope: VecDeque<Rc<TagScope>>,
     scope_depth: usize,
     data_idx: LabelCounter,
@@ -91,6 +93,7 @@ impl<'a> Parser<'a> {
             locals: VecDeque::new(),
             globals: VecDeque::new(),
             var_scope: VecDeque::new(),
+            typedefs: VecDeque::new(),
             tag_scope: VecDeque::new(),
             scope_depth: 0,
             data_idx: LabelCounter::new(),
@@ -107,6 +110,13 @@ impl<'a> Parser<'a> {
             .iter()
             .find(|x| x.name == name && x.scope_depth <= self.scope_depth)
             .map(|var| var.clone())
+    }
+
+    fn find_typedef(&self, name: &str) -> Option<Rc<TypeScope>> {
+        self.typedefs
+            .iter()
+            .find(|x| x.name == name && x.scope_depth <= self.scope_depth)
+            .map(|typedef| typedef.clone())
     }
 
     fn find_tag(&self, name: &str) -> Option<Rc<TagScope>> {
@@ -140,6 +150,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn is_typename(&mut self) -> bool {
+        let next_tok_name = self.tok_peek.peek().map(|tok| &tok.word);
+        is_typename(&mut self.tok_peek)
+            || next_tok_name
+                .and_then(|name| self.find_typedef(name))
+                .is_some()
+    }
+
     // program = (funcdef | global-var)*
     pub fn parse(tok_peek: Peekable<Iter<Token>>) -> Program {
         // All local variable instances created during parsing are
@@ -147,9 +165,25 @@ impl<'a> Parser<'a> {
         let mut parser = Parser::new(tok_peek);
         let mut funcs = Vec::new();
         while let Some(_) = parser.tok_peek.peek() {
-            let basety = Rc::new(RefCell::new(parser.typespec()));
-            let (mut ty, mut name) = parser.declarator(basety);
+            let mut attr = Some(VarAttr::new(false));
+            let basety = Rc::new(RefCell::new(parser.typespec(&mut attr)));
+            let (mut ty, mut name) = parser.declarator(basety.clone());
 
+            // Typedef
+            if let Some(VarAttr { is_typedef: true }) = attr {
+                loop {
+                    let type_scope = TypeScope::new(name, ty, parser.scope_depth);
+                    parser.typedefs.push_front(Rc::new(type_scope));
+                    if consume(&mut parser.tok_peek, ";") {
+                        break;
+                    }
+                    skip(&mut parser.tok_peek, ",");
+                    let declare_info = parser.declarator(basety.clone());
+                    ty = declare_info.0;
+                    name = declare_info.1;
+                }
+                continue;
+            }
             let ty_kind = ty.borrow().kind.clone();
             match &*ty_kind {
                 TypeKind::Func { .. } => {
@@ -184,7 +218,7 @@ impl<'a> Parser<'a> {
     // funcdef = typespec declarator compound-stmt
     #[allow(dead_code)]
     fn funcdef(&mut self) -> Function {
-        let ty = Rc::new(RefCell::new(self.typespec()));
+        let ty = Rc::new(RefCell::new(self.typespec(&mut None)));
         let (ty, func_name) = self.declarator(ty);
 
         self.typed_funcdef(ty, func_name)
@@ -235,7 +269,7 @@ impl<'a> Parser<'a> {
     // while keeping the "current" type object that the typenames up
     // until that point represent. When we reach a non-typename token,
     // we returns the current type object.
-    fn typespec(&mut self) -> Type {
+    fn typespec(&mut self, attr: &mut Option<VarAttr>) -> Type {
         #[derive(PartialEq, Eq, Hash)]
         enum TypeSpec {
             Void,
@@ -247,16 +281,42 @@ impl<'a> Parser<'a> {
         }
         let mut rtn_ty: Option<Type> = None;
         let mut type_counter = HashSet::new();
-        while is_typename(&mut self.tok_peek) {
-            // Handle user-defined types.
-            // NOTE. なんでOtherの情報も保持しないといけないのか謎
-            if consume(&mut self.tok_peek, "struct") {
-                rtn_ty = Some(self.struct_decl());
-                type_counter.insert(TypeSpec::Other);
+        while self.is_typename() {
+            if consume(&mut self.tok_peek, "typedef") {
+                if attr.is_none() {
+                    unimplemented!("storage class specifier is not allowed in this context");
+                }
+                *attr = Some(VarAttr { is_typedef: true });
                 continue;
             }
-            if consume(&mut self.tok_peek, "union") {
-                rtn_ty = Some(self.union_decl());
+
+            // Handle user-defined types.
+            let ty2 = self
+                .tok_peek
+                .peek()
+                .and_then(|x| Some(x.clone()))
+                .and_then(|tok| self.find_typedef(&tok.word))
+                .and_then(|type_scope| Some(type_scope.type_def.clone()))
+                .and_then(|ty| Some(ty.borrow_mut().clone()));
+
+            if next_equal(&mut self.tok_peek, "struct")
+                || next_equal(&mut self.tok_peek, "union")
+                || ty2.is_some()
+            {
+                if !type_counter.is_empty() {
+                    break;
+                }
+
+                // NOTE. なんでOtherの情報も保持しないといけないのか謎
+                if consume(&mut self.tok_peek, "struct") {
+                    rtn_ty = Some(self.struct_decl());
+                } else if consume(&mut self.tok_peek, "union") {
+                    rtn_ty = Some(self.union_decl());
+                } else {
+                    // typedefをskipさせる
+                    rtn_ty = ty2;
+                    self.tok_peek.next();
+                }
                 type_counter.insert(TypeSpec::Other);
                 continue;
             }
@@ -310,7 +370,7 @@ impl<'a> Parser<'a> {
             if params.len() > 0 {
                 skip(&mut self.tok_peek, ",");
             }
-            let basety = Rc::new(RefCell::new(self.typespec()));
+            let basety = Rc::new(RefCell::new(self.typespec(&mut None)));
             let (ty, var_name) = self.declarator(basety);
             params.push((ty, var_name));
         }
@@ -373,7 +433,8 @@ impl<'a> Parser<'a> {
 
     // declaration = typespec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
     fn declaration(&mut self) -> Node {
-        let basety = Rc::new(RefCell::new(self.typespec()));
+        let mut attr = Some(VarAttr::new(false));
+        let basety = Rc::new(RefCell::new(self.typespec(&mut attr)));
 
         let mut is_already_declared = false;
         let mut nodes = Vec::new();
@@ -384,6 +445,13 @@ impl<'a> Parser<'a> {
             is_already_declared = true;
 
             let (ty, name) = Self::declarator(self, basety.clone());
+
+            if let Some(VarAttr { is_typedef: true }) = attr {
+                let type_scope = TypeScope::new(name, ty.clone(), self.scope_depth);
+                self.typedefs.push_front(Rc::new(type_scope));
+                continue;
+            }
+
             if let TypeKind::Void = ty.borrow().kind.as_ref() {
                 unimplemented!("variable declared void");
             }
@@ -399,7 +467,7 @@ impl<'a> Parser<'a> {
                 continue;
             }
             let lhs = Node::new_var_node(rcvar);
-            self.tok_peek.next(); // "=" tokenを飛ばす
+            skip(&mut self.tok_peek, "=");
             let rhs = Self::assign(self);
             let node = Node::new_bin(BinOp::Assign, lhs, rhs);
             let node = Node::new_unary(UnaryOp::ExprStmt, node);
@@ -487,7 +555,7 @@ impl<'a> Parser<'a> {
         self.enter_scope();
 
         while !next_equal(&mut self.tok_peek, "}") {
-            let node = if is_typename(&mut self.tok_peek) {
+            let node = if self.is_typename() {
                 Self::declaration(self)
             } else {
                 Self::stmt(self)
@@ -665,7 +733,7 @@ impl<'a> Parser<'a> {
     fn struct_members(&mut self) -> Vec<Member> {
         let mut members = Vec::new();
         while !next_equal(&mut self.tok_peek, "}") {
-            let basety = Rc::new(RefCell::new(self.typespec()));
+            let basety = Rc::new(RefCell::new(self.typespec(&mut None)));
             let mut is_first_member = true;
 
             while !consume(&mut self.tok_peek, ";") {

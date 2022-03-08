@@ -23,6 +23,9 @@ pub enum TypeKind {
     Struct {
         members: Vec<Member>,
     },
+    TypeDef {
+        ty: Rc<RefCell<Type>>,
+    },
     Dummy,
 }
 

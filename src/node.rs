@@ -107,6 +107,35 @@ impl Var {
         Var::new_gvar(name, Rc::new(RefCell::new(ty)), init_data)
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct VarAttr {
+    pub is_typedef: bool,
+}
+
+impl VarAttr {
+    pub fn new(is_typedef: bool) -> Self {
+        VarAttr { is_typedef }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeScope {
+    pub name: String,
+    pub type_def: Rc<RefCell<Type>>,
+    pub scope_depth: usize,
+}
+
+impl TypeScope {
+    pub fn new(name: String, type_def: Rc<RefCell<Type>>, scope_depth: usize) -> Self {
+        TypeScope {
+            name,
+            type_def,
+            scope_depth,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Member {
     pub ty: Rc<RefCell<Type>>,
